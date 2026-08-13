@@ -13,10 +13,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -35,5 +35,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $assets = Get-ChildItem -LiteralPath release -File | Where-Object { $_.Extension -in '.exe', '.yml', '.blockmap' } | ForEach-Object { $_.FullName }
+          $assets = @(
+            (Get-ChildItem -LiteralPath release -Filter 'Dashboard-Setup-*.exe' -File).FullName
+            (Get-ChildItem -LiteralPath release -Filter 'Dashboard-Setup-*.exe.blockmap' -File).FullName
+            (Resolve-Path -LiteralPath 'release/latest.yml').Path
+          )
+          if ($assets.Count -ne 3) { throw "Expected exactly three release assets, found $($assets.Count)." }
           gh release create $env:GITHUB_REF_NAME $assets --generate-notes --title "Dashboard $env:GITHUB_REF_NAME"
