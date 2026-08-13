@@ -13,7 +13,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
-    "build:win": "npm run icons && npm run build && electron-builder --win nsis",
+    "build:win": "npm run icons && npm run build && electron-builder --win nsis --publish never",
     "icons": "node scripts/generate-icon.mjs",
     "preview": "electron-vite preview",
     "smoke:ui": "node scripts/ui-smoke.mjs",
