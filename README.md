@@ -21,7 +21,7 @@ Download the appropriate installer from the latest GitHub release:
 - macOS: `Dashboard-*-mac-universal.dmg` for Apple Silicon and Intel Macs
 - Windows: `Dashboard-Setup-*.exe`
 
-For a normal macOS installation, release builds should be signed and notarized with an Apple Developer ID. Unsigned development builds can still be opened manually through macOS Privacy & Security.
+The personal macOS build is unsigned. The first time you open it, right-click Dashboard, choose **Open**, then confirm. If macOS still blocks it, allow Dashboard in **System Settings → Privacy & Security**.
 
 ## Development
 
@@ -56,20 +56,6 @@ MAIN_VITE_SUPABASE_PUBLISHABLE_KEY
 ```
 
 For GitHub Actions, add them as repository secrets named `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`.
-
-## macOS signing
-
-The release workflow supports electron-builder signing and notarization with:
-
-```text
-MAC_CSC_LINK
-MAC_CSC_KEY_PASSWORD
-APPLE_API_KEY
-APPLE_API_KEY_ID
-APPLE_API_ISSUER
-```
-
-Without these repository secrets, the workflow can produce a testable unsigned Mac build, but it will not provide the normal Gatekeeper installation experience.
 
 ## Privacy
 
