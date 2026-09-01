@@ -67,6 +67,7 @@ export interface DashboardState {
   goals: Goal[]
   settings: DashboardSettings
   activeTimer: ActiveTimer | null
+  sentTaskReminders: string[]
 }
 
 export interface TaskDraft {

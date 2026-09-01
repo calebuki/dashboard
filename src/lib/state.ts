@@ -70,6 +70,7 @@ export function createInitialState(): DashboardState {
       notifications: true
     },
     activeTimer: null,
+    sentTaskReminders: [],
     tasks: [
       makeTask({
         title: 'Swedish recall session',
@@ -143,6 +144,7 @@ export function normalizeDashboardState(stored: DashboardState): DashboardState 
   return {
     ...stored,
     version: 2,
+    sentTaskReminders: stored.sentTaskReminders ?? [],
     tasks: stored.tasks.map((task) => ({
       ...task,
       updatedAt: task.updatedAt ?? task.createdAt ?? now

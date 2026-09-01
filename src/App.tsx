@@ -59,6 +59,7 @@ import {
   todayKey
 } from './lib/date'
 import { nextWeekend, parseFlexibleTime, parseQuickTask } from './lib/quick-add'
+import { pendingTaskReminders } from './lib/reminders'
 import {
   createInitialState,
   goalDay,
@@ -116,6 +117,7 @@ export default function App() {
   const [goalOpen, setGoalOpen] = useState(false)
   const [now, setNow] = useState(Date.now())
   const loaded = useRef(false)
+  const remindersInFlight = useRef(new Set<string>())
 
   useEffect(() => {
     document.documentElement.classList.add('dark', `platform-${window.dashboard.platform}`)
@@ -144,10 +146,11 @@ export default function App() {
     return () => clearTimeout(id)
   }, [state])
   useEffect(() => {
-    if (!state?.activeTimer || state.activeTimer.pausedRemainingSeconds !== undefined) return
-    const id = setInterval(() => setNow(Date.now()), 1000)
+    const intervalMs =
+      state?.activeTimer && state.activeTimer.pausedRemainingSeconds === undefined ? 1000 : 30_000
+    const id = setInterval(() => setNow(Date.now()), intervalMs)
     return () => clearInterval(id)
-  }, [state?.activeTimer])
+  }, [state?.activeTimer?.pausedRemainingSeconds])
   useEffect(() => {
     if (
       !state?.activeTimer ||
@@ -163,6 +166,28 @@ export default function App() {
       })
     setState((current) => (current ? { ...current, activeTimer: null } : current))
   }, [now, state?.activeTimer, state?.settings.notifications, state?.tasks])
+  useEffect(() => {
+    if (!state?.settings.notifications) return
+    const reminders = pendingTaskReminders(state, new Date(now)).filter(
+      (reminder) => !remindersInFlight.current.has(reminder.key)
+    )
+    if (!reminders.length) return
+
+    reminders.forEach((reminder) => {
+      remindersInFlight.current.add(reminder.key)
+      void window.dashboard.notify({ title: reminder.title, body: reminder.body })
+    })
+    setState((current) =>
+      current
+        ? {
+            ...current,
+            sentTaskReminders: [
+              ...new Set([...current.sentTaskReminders, ...reminders.map(({ key }) => key)])
+            ].slice(-500)
+          }
+        : current
+    )
+  }, [now, state?.settings.notifications, state?.tasks, state?.sentTaskReminders])
 
   if (!state)
     return (
