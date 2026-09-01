@@ -25,6 +25,7 @@ export interface Task {
   rolledOverFrom?: string
   rolloverCount: number
   createdAt: string
+  updatedAt: string
 }
 
 export interface GoalPhase {
@@ -41,6 +42,7 @@ export interface Goal {
   targetDate: string
   color: string
   phases: GoalPhase[]
+  updatedAt: string
 }
 
 export interface DashboardSettings {
@@ -60,7 +62,7 @@ export interface ActiveTimer {
 }
 
 export interface DashboardState {
-  version: 1
+  version: 2
   tasks: Task[]
   goals: Goal[]
   settings: DashboardSettings
@@ -84,13 +86,33 @@ export interface NotificationPayload {
   body: string
 }
 
+export type SyncPhase =
+  'unavailable' | 'signed-out' | 'code-sent' | 'syncing' | 'synced' | 'offline' | 'error'
+
+export interface SyncStatus {
+  configured: boolean
+  signedIn: boolean
+  phase: SyncPhase
+  email?: string
+  message?: string
+  lastSyncedAt?: string
+}
+
 export interface DashboardBridge {
+  platform: 'darwin' | 'win32' | 'linux'
   loadState: () => Promise<DashboardState | null>
   saveState: (state: DashboardState) => Promise<boolean>
   setAlwaysOnTop: (enabled: boolean) => Promise<boolean>
   setOpacity: (opacity: number) => Promise<number>
   setLaunchAtLogin: (enabled: boolean) => Promise<boolean>
   notify: (payload: NotificationPayload) => Promise<boolean>
+  getSyncStatus: () => Promise<SyncStatus>
+  requestSyncCode: (email: string) => Promise<SyncStatus>
+  verifySyncCode: (email: string, code: string) => Promise<SyncStatus>
+  signOutSync: () => Promise<SyncStatus>
+  syncNow: () => Promise<SyncStatus>
+  onSyncStatus: (listener: (status: SyncStatus) => void) => () => void
+  onRemoteState: (listener: (state: DashboardState) => void) => () => void
   minimize: () => void
   hide: () => void
   quit: () => void

@@ -1,7 +1,7 @@
 {
   "name": "dashboard-desktop",
-  "version": "0.1.0",
-  "description": "A calm, always-on-top Windows dashboard for immediate tasks and long-term goals.",
+  "version": "0.2.0",
+  "description": "A calm, always-on-top Mac and Windows dashboard with offline-first cross-computer sync.",
   "author": "Caleb Uki",
   "license": "MIT",
   "main": "./out/main/index.js",
@@ -14,6 +14,7 @@
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "build:win": "npm run icons && npm run build && electron-builder --win nsis --publish never",
+    "build:mac": "npm run icons && npm run build && electron-builder --mac dmg zip --universal --publish never",
     "icons": "node scripts/generate-icon.mjs",
     "preview": "electron-vite preview",
     "smoke:ui": "node scripts/ui-smoke.mjs",
@@ -21,6 +22,8 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@types/flubber": "0.4.0",
     "@types/node": "26.2.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
@@ -32,6 +35,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "sharp": "0.35.3",
+    "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
     "vite": "7.3.6",
     "vitest": "4.1.10"
@@ -59,6 +63,33 @@
       ],
       "artifactName": "Dashboard-Setup-${version}.${ext}"
     },
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.productivity",
+      "artifactName": "Dashboard-${version}-mac-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "title": "Dashboard ${version}",
+      "artifactName": "Dashboard-${version}-mac-${arch}.${ext}"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
@@ -73,5 +104,16 @@
         "repo": "dashboard"
       }
     ]
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "1.2.4",
+    "@supabase/supabase-js": "2.112.4",
+    "chrono-node": "2.10.1",
+    "clsx": "2.1.1",
+    "figma-squircle": "1.1.0",
+    "flubber": "0.4.2",
+    "motion": "13.1.1",
+    "react-use-measure": "2.1.7",
+    "tailwind-merge": "3.3.1"
   }
 }

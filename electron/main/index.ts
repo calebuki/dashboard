@@ -1,11 +1,23 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, Tray } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  nativeImage,
+  Notification,
+  Tray
+} from 'electron'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { DashboardState, NotificationPayload } from '../../src/types'
+import { normalizeDashboardState } from '../../src/lib/state'
+import { DashboardSyncManager } from './sync'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
+let syncManager: DashboardSyncManager | null = null
 
 const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL)
 
@@ -18,7 +30,9 @@ function statePath(): string {
 async function loadState(): Promise<DashboardState | null> {
   try {
     const content = await readFile(statePath(), 'utf8')
-    return JSON.parse(content) as DashboardState
+    const state = normalizeDashboardState(JSON.parse(content) as DashboardState)
+    syncManager?.setLocalState(state)
+    return state
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     if (code !== 'ENOENT') console.error('Could not load dashboard state', error)
@@ -27,6 +41,12 @@ async function loadState(): Promise<DashboardState | null> {
 }
 
 async function saveState(state: DashboardState): Promise<boolean> {
+  const saved = await writeState(state)
+  if (saved) syncManager?.setLocalState(state)
+  return saved
+}
+
+async function writeState(state: DashboardState): Promise<boolean> {
   try {
     const filePath = statePath()
     const temporaryPath = `${filePath}.tmp`
@@ -47,7 +67,9 @@ function buildTrayImage(): Electron.NativeImage {
       <path d="M9 9h14v3H9zm0 6h10v3H9zm0 6h7v3H9z" fill="#151611"/>
     </svg>`
   const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
-  return nativeImage.createFromDataURL(dataUrl).resize({ width: 16, height: 16 })
+  const image = nativeImage.createFromDataURL(dataUrl).resize({ width: 16, height: 16 })
+  if (process.platform === 'darwin') image.setTemplateImage(true)
+  return image
 }
 
 function showWindow(): void {
@@ -64,7 +86,9 @@ function toggleWindow(): void {
 
 function createTray(): void {
   tray = new Tray(buildTrayImage())
-  tray.setToolTip('Dashboard — Ctrl+Shift+Space')
+  tray.setToolTip(
+    process.platform === 'darwin' ? 'Dashboard — ⌘⇧Space' : 'Dashboard — Ctrl+Shift+Space'
+  )
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'Open Dashboard', click: showWindow },
@@ -82,13 +106,20 @@ function createTray(): void {
 }
 
 function createWindow(): void {
+  const isMac = process.platform === 'darwin'
   mainWindow = new BrowserWindow({
-    width: 448,
-    height: 800,
-    minWidth: 380,
+    width: 480,
+    height: 840,
+    minWidth: 410,
     minHeight: 620,
     show: false,
-    frame: false,
+    frame: isMac,
+    ...(isMac
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 15, y: 17 }
+        }
+      : {}),
     transparent: false,
     backgroundColor: '#171814',
     alwaysOnTop: true,
@@ -157,6 +188,24 @@ function registerIpc(): void {
     }).show()
     return true
   })
+  ipcMain.handle(
+    'dashboard:get-sync-status',
+    () =>
+      syncManager?.getStatus() ?? {
+        configured: false,
+        signedIn: false,
+        phase: 'unavailable',
+        message: 'Cloud sync needs to be configured for this build.'
+      }
+  )
+  ipcMain.handle('dashboard:request-sync-code', (_event, email: string) =>
+    syncManager?.requestCode(email)
+  )
+  ipcMain.handle('dashboard:verify-sync-code', (_event, email: string, code: string) =>
+    syncManager?.verifyCode(email, code)
+  )
+  ipcMain.handle('dashboard:sign-out-sync', () => syncManager?.signOut())
+  ipcMain.handle('dashboard:sync-now', () => syncManager?.syncNow())
   ipcMain.on('dashboard:minimize', () => mainWindow?.minimize())
   ipcMain.on('dashboard:hide', () => mainWindow?.hide())
   ipcMain.on('dashboard:quit', () => {
@@ -166,10 +215,41 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(() => {
-  app.setAppUserModelId('com.calebuki.dashboard')
+  if (process.platform === 'win32') app.setAppUserModelId('com.calebuki.dashboard')
   registerIpc()
   createWindow()
   createTray()
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        {
+          label: 'Dashboard',
+          submenu: [
+            { role: 'about' },
+            { type: 'separator' },
+            {
+              label: 'Hide Dashboard',
+              accelerator: 'Command+H',
+              click: () => mainWindow?.hide()
+            },
+            { type: 'separator' },
+            { role: 'quit' }
+          ]
+        },
+        { role: 'editMenu' },
+        { role: 'windowMenu' }
+      ])
+    )
+  }
+  syncManager = new DashboardSyncManager({
+    userDataPath: app.getPath('userData'),
+    onStatus: (status) => mainWindow?.webContents.send('dashboard:sync-status', status),
+    onRemoteState: async (state) => {
+      await writeState(state)
+      mainWindow?.webContents.send('dashboard:remote-state', state)
+    }
+  })
+  void syncManager.initialize()
   globalShortcut.register('CommandOrControl+Shift+Space', toggleWindow)
 
   app.on('activate', () => {

@@ -1,47 +1,80 @@
 # Dashboard
 
-Dashboard is a calm, always-on-top Windows task panel for the things that need attention now. It combines sticky-note immediacy with recurring routines, a calendar, focused timers, and lightweight goal planning.
+Dashboard is a calm, always-on-top task panel for macOS and Windows. It combines quick natural-language capture, recurring routines, a calendar, focus timers, long-term goals, and optional offline-first sync across computers.
 
-## What is included
+## Highlights
 
+- Type `Call Maya tomorrow at 6` to create a correctly scheduled task
+- One-tap Today, Tomorrow, Weekend, Morning, Afternoon, and Evening choices
 - Personal, Work, and School task areas
-- Always-on-top window with regular and 50% overlay opacity modes
-- Automatic rollover for unfinished dated tasks
-- Daily, weekday, and weekly recurrence
-- Month calendar with upcoming tasks
-- Per-task time limits, pause/resume, and Windows notifications
-- System tray support and a global `Ctrl+Shift+Space` show/hide shortcut
-- Optional launch at Windows login
-- Local-only JSON storage with no account, sync, or tracking
-- A seeded 12-month Swedish B1 goal with a 45-minute daily routine
+- Daily, weekday, and weekly recurrence with automatic rollover
+- Month calendar, focused timers, notifications, and lightweight goals
+- Menu bar/system tray support and a global `⌘/Ctrl + Shift + Space` shortcut
+- Local storage that continues working offline
+- Optional passwordless account sync across Macs and PCs
+- Rare UI Duration Picker and OTP Input, adapted to Dashboard's visual system
 
-## Install on Windows
+## Install
 
-Download `Dashboard-Setup-0.1.0.exe` from the latest GitHub release and run it. The first personal build is not code-signed, so Windows SmartScreen may ask you to confirm that you want to run it.
+Download the appropriate installer from the latest GitHub release:
 
-Closing the window sends Dashboard to the system tray. Use the tray menu to quit completely.
+- macOS: `Dashboard-*-mac-universal.dmg` for Apple Silicon and Intel Macs
+- Windows: `Dashboard-Setup-*.exe`
+
+For a normal macOS installation, release builds should be signed and notarized with an Apple Developer ID. Unsigned development builds can still be opened manually through macOS Privacy & Security.
 
 ## Development
 
-Requirements: Node.js 24+ and Windows for installer packaging.
+Requirements: Node.js 24+.
 
-```powershell
+```bash
 npm install
 npm run dev
 ```
 
-Useful checks:
+Checks and packages:
 
-```powershell
+```bash
 npm run typecheck
 npm test
+npm run build:mac
 npm run build:win
 ```
 
-## Data and privacy
+## Cloud sync setup
 
-Dashboard stores tasks and preferences in Electron's local application-data folder on the current PC. It does not make network requests or require a login. Removing the app does not intentionally upload or transfer any task data.
+Dashboard uses Supabase Auth, Postgres, Realtime, and Row Level Security. The app never includes a secret or service-role key.
+
+1. Create or link a Supabase project.
+2. Apply `supabase/migrations/20260901182804_dashboard_sync.sql` with the Supabase CLI.
+3. Configure a production SMTP provider and change the Magic Link email template to show `{{ .Token }}` so users receive a six-digit OTP.
+4. Set these build environment variables:
+
+```text
+MAIN_VITE_SUPABASE_URL
+MAIN_VITE_SUPABASE_PUBLISHABLE_KEY
+```
+
+For GitHub Actions, add them as repository secrets named `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`.
+
+## macOS signing
+
+The release workflow supports electron-builder signing and notarization with:
+
+```text
+MAC_CSC_LINK
+MAC_CSC_KEY_PASSWORD
+APPLE_API_KEY
+APPLE_API_KEY_ID
+APPLE_API_ISSUER
+```
+
+Without these repository secrets, the workflow can produce a testable unsigned Mac build, but it will not provide the normal Gatekeeper installation experience.
+
+## Privacy
+
+Dashboard stores a local JSON cache in Electron's application-data directory. When sync is enabled and the user signs in, task, goal, and preference records are sent over TLS to the configured Supabase project. Row Level Security restricts every record to its owning account. Focus timers remain device-local.
 
 ## License
 
-MIT
+MIT. Rare UI components included in this project are also MIT licensed; see their source headers and the upstream Rare UI project.

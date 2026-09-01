@@ -1,40 +1,53 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bell,
-  BriefcaseBusiness,
   Blend,
+  BriefcaseBusiness,
   CalendarDays,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CircleAlert,
   Clock3,
+  Cloud,
+  CloudOff,
   GraduationCap,
   LayoutList,
+  LoaderCircle,
   Minus,
+  MoreHorizontal,
   Pause,
   Pencil,
   Pin,
   PinOff,
   Play,
   Plus,
+  RefreshCw,
   RotateCcw,
   Settings,
+  Sparkles,
   Target,
   Trash2,
   UserRound,
+  WifiOff,
   X
 } from 'lucide-react'
+import { DurationPicker } from '@/components/ui/duration-picker'
+import { GooeyNav } from '@/components/ui/gooey-nav'
+import { OtpInput, type OtpStatus } from '@/components/ui/otp-input'
 import type {
   ActiveTimer,
   Category,
   DashboardSettings,
   DashboardState,
   Goal,
+  SyncStatus,
   Task,
   TaskDraft
 } from './types'
 import {
+  addDays,
   calendarDays,
   changeMonth,
   formatLongDate,
@@ -45,9 +58,11 @@ import {
   startOfMonth,
   todayKey
 } from './lib/date'
+import { nextWeekend, parseFlexibleTime, parseQuickTask } from './lib/quick-add'
 import {
   createInitialState,
   goalDay,
+  normalizeDashboardState,
   rolloverTasks,
   taskFromDraft,
   taskIsCompleteOn,
@@ -56,54 +71,61 @@ import {
 } from './lib/state'
 
 type View = 'today' | 'calendar' | 'settings'
-type CategoryFilter = 'all' | Category
-
-const categoryMeta: Record<Category, { label: string; icon: typeof UserRound }> = {
+type Filter = 'all' | Category
+const areas: Record<Category, { label: string; icon: typeof UserRound }> = {
   personal: { label: 'Personal', icon: UserRound },
   work: { label: 'Work', icon: BriefcaseBusiness },
   school: { label: 'School', icon: GraduationCap }
 }
-
-function formatCountdown(seconds: number): string {
-  const safeSeconds = Math.max(0, seconds)
-  const hours = Math.floor(safeSeconds / 3600)
-  const minutes = Math.floor((safeSeconds % 3600) / 60)
-  const remainder = safeSeconds % 60
-  return hours > 0
-    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
-    : `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+const noSync: SyncStatus = {
+  configured: false,
+  signedIn: false,
+  phase: 'unavailable',
+  message: 'Cloud sync is not configured in this build.'
 }
-
-function draftForTask(task: Task): TaskDraft {
-  return {
-    title: task.title,
-    notes: task.notes,
-    category: task.category,
-    dueDate: task.dueDate,
-    dueTime: task.dueTime ?? '',
-    estimateMinutes: task.estimateMinutes,
-    recurrence: task.recurrence?.kind ?? 'none',
-    priority: task.priority,
-    goalId: task.goalId
-  }
+const timeLabel = (time?: string) => {
+  if (!time) return ''
+  const [h, m] = time.split(':').map(Number)
+  return `${h % 12 || 12}${m ? `:${String(m).padStart(2, '0')}` : ''}${h >= 12 ? 'pm' : 'am'}`
 }
+const countdown = (seconds: number) =>
+  `${String(Math.floor(Math.max(0, seconds) / 60)).padStart(2, '0')}:${String(Math.max(0, seconds) % 60).padStart(2, '0')}`
+const draftFor = (task: Task): TaskDraft => ({
+  title: task.title,
+  notes: task.notes,
+  category: task.category,
+  dueDate: task.dueDate,
+  dueTime: task.dueTime ?? '',
+  estimateMinutes: task.estimateMinutes,
+  recurrence: task.recurrence?.kind ?? 'none',
+  priority: task.priority,
+  goalId: task.goalId
+})
 
-function App() {
+export default function App() {
   const [state, setState] = useState<DashboardState | null>(null)
+  const [sync, setSync] = useState<SyncStatus>(noSync)
   const [view, setView] = useState<View>('today')
-  const [category, setCategory] = useState<CategoryFilter>('all')
-  const [selectedDate, setSelectedDate] = useState(todayKey())
-  const [visibleMonth, setVisibleMonth] = useState(startOfMonth(todayKey()))
-  const [composer, setComposer] = useState<{ date: string; task?: Task } | null>(null)
+  const [filter, setFilter] = useState<Filter>('all')
+  const [selected, setSelected] = useState(todayKey())
+  const [month, setMonth] = useState(startOfMonth(todayKey()))
+  const [composer, setComposer] = useState<{
+    date: string
+    task?: Task
+  } | null>(null)
   const [goalOpen, setGoalOpen] = useState(false)
   const [now, setNow] = useState(Date.now())
   const loaded = useRef(false)
-  const notifiedTimer = useRef<string | null>(null)
-  const currentDate = useRef(todayKey())
 
   useEffect(() => {
+    document.documentElement.classList.add('dark', `platform-${window.dashboard.platform}`)
+    const offSync = window.dashboard.onSyncStatus(setSync)
+    const offRemote = window.dashboard.onRemoteState((remote) =>
+      setState(rolloverTasks(normalizeDashboardState(remote)))
+    )
+    void window.dashboard.getSyncStatus().then(setSync)
     void window.dashboard.loadState().then((stored) => {
-      const next = rolloverTasks(stored ?? createInitialState())
+      const next = rolloverTasks(stored ? normalizeDashboardState(stored) : createInitialState())
       setState(next)
       loaded.current = true
       void window.dashboard.setAlwaysOnTop(next.settings.alwaysOnTop)
@@ -111,118 +133,85 @@ function App() {
         next.settings.overlayMode ? next.settings.overlayOpacity : next.settings.opacity
       )
     })
+    return () => {
+      offSync()
+      offRemote()
+    }
   }, [])
-
   useEffect(() => {
     if (!state || !loaded.current) return
-    const timeout = window.setTimeout(() => void window.dashboard.saveState(state), 180)
-    return () => window.clearTimeout(timeout)
+    const id = window.setTimeout(() => void window.dashboard.saveState(state), 220)
+    return () => clearTimeout(id)
   }, [state])
-
   useEffect(() => {
     if (!state?.activeTimer || state.activeTimer.pausedRemainingSeconds !== undefined) return
-    setNow(Date.now())
-    const interval = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(interval)
-  }, [state?.activeTimer?.endsAt, state?.activeTimer?.pausedRemainingSeconds])
-
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [state?.activeTimer])
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      const nextDate = todayKey()
-      if (nextDate === currentDate.current) return
-      const previousDate = currentDate.current
-      currentDate.current = nextDate
-      setState((current) => current ? rolloverTasks(current, nextDate) : current)
-      setSelectedDate((selected) => selected === previousDate ? nextDate : selected)
-      setVisibleMonth((month) => isSameMonth(month, previousDate) ? startOfMonth(nextDate) : month)
-    }, 30_000)
-    return () => window.clearInterval(interval)
-  }, [])
-
-  useEffect(() => {
-    if (!state?.activeTimer || state.activeTimer.pausedRemainingSeconds !== undefined) return
-    const timer = state.activeTimer
-    if (timer.endsAt > now || notifiedTimer.current === timer.taskId) return
-
-    notifiedTimer.current = timer.taskId
-    const task = state.tasks.find((item) => item.id === timer.taskId)
-    if (state.settings.notifications) {
+    if (
+      !state?.activeTimer ||
+      state.activeTimer.pausedRemainingSeconds !== undefined ||
+      state.activeTimer.endsAt > now
+    )
+      return
+    const task = state.tasks.find((item) => item.id === state.activeTimer?.taskId)
+    if (state.settings.notifications)
       void window.dashboard.notify({
         title: 'Time is up',
-        body: task ? `${task.title} — check it off or add more time.` : 'Your task timer has finished.'
+        body: task ? `${task.title} — check it off or add more time.` : 'Your timer finished.'
       })
-    }
     setState((current) => (current ? { ...current, activeTimer: null } : current))
   }, [now, state?.activeTimer, state?.settings.notifications, state?.tasks])
 
-  const updateSettings = (patch: Partial<DashboardSettings>) => {
+  if (!state)
+    return (
+      <div className="loading-shell">
+        <LoaderCircle className="spin" />
+        Getting today ready…
+      </div>
+    )
+  const settings = (patch: Partial<DashboardSettings>) =>
     setState((current) =>
       current ? { ...current, settings: { ...current.settings, ...patch } } : current
     )
-  }
-
-  const toggleOverlay = () => {
-    if (!state) return
-    const overlayMode = !state.settings.overlayMode
-    updateSettings({ overlayMode })
-    void window.dashboard.setOpacity(
-      overlayMode ? state.settings.overlayOpacity : state.settings.opacity
-    )
-  }
-
-  const togglePin = () => {
-    if (!state) return
-    const enabled = !state.settings.alwaysOnTop
-    updateSettings({ alwaysOnTop: enabled })
-    void window.dashboard.setAlwaysOnTop(enabled)
-  }
-
-  const toggleTask = (task: Task, date = todayKey()) => {
-    setState((current) => {
-      if (!current) return current
-      const completedTask = toggleTaskComplete(task, date)
-      const activeTimer = current.activeTimer?.taskId === task.id ? null : current.activeTimer
-      return {
-        ...current,
-        activeTimer,
-        tasks: current.tasks.map((item) => (item.id === task.id ? completedTask : item))
-      }
-    })
-  }
-
-  const deleteTask = (taskId: string) => {
+  const toggle = (task: Task, date = todayKey()) =>
     setState((current) =>
       current
         ? {
             ...current,
-            activeTimer: current.activeTimer?.taskId === taskId ? null : current.activeTimer,
-            tasks: current.tasks.filter((task) => task.id !== taskId)
+            activeTimer: current.activeTimer?.taskId === task.id ? null : current.activeTimer,
+            tasks: current.tasks.map((item) =>
+              item.id === task.id ? toggleTaskComplete(task, date) : item
+            )
           }
         : current
     )
-  }
-
-  const saveDraft = (draft: TaskDraft) => {
+  const remove = (id: string) =>
+    setState((current) =>
+      current
+        ? {
+            ...current,
+            activeTimer: current.activeTimer?.taskId === id ? null : current.activeTimer,
+            tasks: current.tasks.filter((task) => task.id !== id)
+          }
+        : current
+    )
+  const save = (draft: TaskDraft) => {
     setState((current) => {
       if (!current) return current
       if (!composer?.task) return { ...current, tasks: [...current.tasks, taskFromDraft(draft)] }
-
       return {
         ...current,
         tasks: current.tasks.map((task) =>
           task.id === composer.task?.id
             ? {
                 ...task,
-                title: draft.title.trim(),
-                notes: draft.notes.trim(),
-                category: draft.category,
-                dueDate: draft.dueDate,
+                ...draft,
                 dueTime: draft.dueTime || undefined,
-                estimateMinutes: draft.estimateMinutes,
                 recurrence: draft.recurrence === 'none' ? null : { kind: draft.recurrence },
-                priority: draft.priority,
-                goalId: draft.goalId,
-                rolledOverFrom: undefined
+                rolledOverFrom: undefined,
+                updatedAt: new Date().toISOString()
               }
             : task
         )
@@ -230,9 +219,31 @@ function App() {
     })
     setComposer(null)
   }
-
-  const startTimer = (task: Task) => {
-    notifiedTimer.current = null
+  const quickAdd = (text: string) => {
+    const parsed = parseQuickTask(text)
+    if (!parsed.title) return
+    setState((current) =>
+      current
+        ? {
+            ...current,
+            tasks: [
+              ...current.tasks,
+              taskFromDraft({
+                title: parsed.title,
+                notes: '',
+                category: filter === 'all' ? 'personal' : filter,
+                dueDate: parsed.dueDate,
+                dueTime: parsed.dueTime,
+                estimateMinutes: 20,
+                recurrence: 'none',
+                priority: 2
+              })
+            ]
+          }
+        : current
+    )
+  }
+  const start = (task: Task) => {
     const durationSeconds = Math.max(60, task.estimateMinutes * 60)
     setState((current) =>
       current
@@ -247,8 +258,7 @@ function App() {
         : current
     )
   }
-
-  const pauseOrResumeTimer = () => {
+  const pause = () =>
     setState((current) => {
       if (!current?.activeTimer) return current
       const timer = current.activeTimer
@@ -265,404 +275,552 @@ function App() {
             }
       return { ...current, activeTimer }
     })
-  }
-
-  if (!state) {
-    return <div className="loading-shell">Getting today ready…</div>
-  }
-
-  const activeTimerTask = state.activeTimer
+  const timerTask = state.activeTimer
     ? state.tasks.find((task) => task.id === state.activeTimer?.taskId)
     : undefined
-  const remainingSeconds = state.activeTimer
+  const seconds = state.activeTimer
     ? (state.activeTimer.pausedRemainingSeconds ??
       Math.max(0, Math.ceil((state.activeTimer.endsAt - now) / 1000)))
     : 0
+  const pin = () => {
+    const value = !state.settings.alwaysOnTop
+    settings({ alwaysOnTop: value })
+    void window.dashboard.setAlwaysOnTop(value)
+  }
+  const overlay = () => {
+    const value = !state.settings.overlayMode
+    settings({ overlayMode: value })
+    void window.dashboard.setOpacity(value ? state.settings.overlayOpacity : state.settings.opacity)
+  }
 
   return (
     <main className="app-shell">
       <TitleBar
-        overlayMode={state.settings.overlayMode}
         pinned={state.settings.alwaysOnTop}
-        onToggleOverlay={toggleOverlay}
-        onTogglePin={togglePin}
+        overlay={state.settings.overlayMode}
+        sync={sync}
+        onPin={pin}
+        onOverlay={overlay}
       />
-
       <div className="app-body">
         {view === 'today' && (
-          <TodayView
+          <Today
             state={state}
-            category={category}
+            filter={filter}
+            sync={sync}
             goalOpen={goalOpen}
-            onCategoryChange={setCategory}
-            onGoalToggle={() => setGoalOpen((open) => !open)}
-            onToggleTask={(task) => toggleTask(task)}
-            onEditTask={(task) => setComposer({ date: task.dueDate, task })}
-            onDeleteTask={deleteTask}
-            onStartTimer={startTimer}
+            onFilter={setFilter}
+            onGoal={() => setGoalOpen(!goalOpen)}
+            onToggle={toggle}
+            onEdit={(task) => setComposer({ date: task.dueDate, task })}
+            onDelete={remove}
+            onTimer={start}
+            onQuick={quickAdd}
             onAdd={() => setComposer({ date: todayKey() })}
           />
         )}
-
         {view === 'calendar' && (
-          <CalendarView
+          <Calendar
             tasks={state.tasks}
-            category={category}
-            selectedDate={selectedDate}
-            visibleMonth={visibleMonth}
-            onCategoryChange={setCategory}
-            onSelectDate={setSelectedDate}
-            onMonthChange={setVisibleMonth}
-            onToggleTask={toggleTask}
-            onEditTask={(task) => setComposer({ date: task.dueDate, task })}
-            onDeleteTask={deleteTask}
-            onStartTimer={startTimer}
-            onAdd={() => setComposer({ date: selectedDate })}
+            filter={filter}
+            selected={selected}
+            month={month}
+            onFilter={setFilter}
+            onSelected={setSelected}
+            onMonth={setMonth}
+            onToggle={toggle}
+            onEdit={(task) => setComposer({ date: task.dueDate, task })}
+            onDelete={remove}
+            onTimer={start}
+            onAdd={() => setComposer({ date: selected })}
           />
         )}
-
         {view === 'settings' && (
           <SettingsView
             settings={state.settings}
-            onSettingsChange={updateSettings}
+            sync={sync}
+            onSync={setSync}
+            onSettings={settings}
           />
         )}
       </div>
-
-      {state.activeTimer && activeTimerTask && (
-        <TimerBar
-          task={activeTimerTask}
-          seconds={remainingSeconds}
+      {state.activeTimer && timerTask && (
+        <Timer
+          task={timerTask}
+          seconds={seconds}
           paused={state.activeTimer.pausedRemainingSeconds !== undefined}
-          onPauseResume={pauseOrResumeTimer}
-          onReset={() => startTimer(activeTimerTask)}
-          onClose={() => setState((current) => current ? { ...current, activeTimer: null } : current)}
+          onPause={pause}
+          onReset={() => start(timerTask)}
+          onClose={() => setState({ ...state, activeTimer: null })}
         />
       )}
-
-      <BottomNav view={view} onChange={setView} />
-
+      <GooeyNav<View>
+        className="bottom-nav"
+        value={view}
+        onChange={setView}
+        items={[
+          { value: 'today', label: 'Today', icon: <LayoutList size={17} /> },
+          {
+            value: 'calendar',
+            label: 'Calendar',
+            icon: <CalendarDays size={17} />
+          },
+          {
+            value: 'settings',
+            label: 'Settings',
+            icon: <Settings size={17} />
+          }
+        ]}
+      />
       {composer && (
-        <TaskComposer
-          initial={composer.task ? draftForTask(composer.task) : undefined}
+        <Composer
+          initial={composer.task ? draftFor(composer.task) : undefined}
           defaultDate={composer.date}
           goals={state.goals}
           onCancel={() => setComposer(null)}
-          onSave={saveDraft}
+          onSave={save}
         />
       )}
     </main>
   )
 }
 
+function SyncPill({ status }: { status: SyncStatus }) {
+  const Icon =
+    status.phase === 'offline'
+      ? WifiOff
+      : status.phase === 'error' || status.phase === 'unavailable'
+        ? CloudOff
+        : status.phase === 'syncing'
+          ? LoaderCircle
+          : Cloud
+  const text =
+    status.phase === 'synced'
+      ? 'Synced'
+      : status.phase === 'syncing'
+        ? 'Syncing'
+        : status.phase === 'offline'
+          ? 'Offline'
+          : status.signedIn
+            ? 'Issue'
+            : 'Local'
+  return (
+    <span className={`sync-pill ${status.phase}`} title={status.message ?? text}>
+      <Icon className={status.phase === 'syncing' ? 'spin' : ''} size={12} />
+      {text}
+    </span>
+  )
+}
 function TitleBar({
-  overlayMode,
   pinned,
-  onToggleOverlay,
-  onTogglePin
+  overlay,
+  sync,
+  onPin,
+  onOverlay
 }: {
-  overlayMode: boolean
   pinned: boolean
-  onToggleOverlay: () => void
-  onTogglePin: () => void
+  overlay: boolean
+  sync: SyncStatus
+  onPin: () => void
+  onOverlay: () => void
 }) {
+  const mac = window.dashboard.platform === 'darwin'
   return (
     <header className="title-bar">
-      <div className="brand-mark" aria-hidden="true"><span /><span /><span /></div>
-      <span className="brand-name">Dashboard</span>
+      <div className="brand-mark">
+        <i />
+        <i />
+        <i />
+      </div>
+      <b>Dashboard</b>
+      <SyncPill status={sync} />
       <div className="window-actions">
         <button
-          className={overlayMode ? 'active' : ''}
-          onClick={onToggleOverlay}
-          aria-label={overlayMode ? 'Use regular opacity' : 'Use 50% overlay opacity'}
-          title="Toggle 50% overlay"
+          aria-label="Toggle overlay opacity"
+          className={overlay ? 'active' : ''}
+          onClick={onOverlay}
         >
           <Blend size={14} />
         </button>
         <button
+          aria-label="Toggle always on top"
           className={pinned ? 'active' : ''}
-          onClick={onTogglePin}
-          aria-label={pinned ? 'Stop keeping above other apps' : 'Keep above other apps'}
-          title="Always on top"
+          onClick={onPin}
         >
           {pinned ? <Pin size={14} /> : <PinOff size={14} />}
         </button>
-        <button onClick={() => window.dashboard.minimize()} aria-label="Minimize">
-          <Minus size={14} />
-        </button>
-        <button onClick={() => window.dashboard.hide()} aria-label="Hide to tray">
-          <X size={14} />
-        </button>
+        {!mac && (
+          <button aria-label="Minimize" onClick={() => window.dashboard.minimize()}>
+            <Minus size={14} />
+          </button>
+        )}
+        {!mac && (
+          <button aria-label="Hide to tray" onClick={() => window.dashboard.hide()}>
+            <X size={14} />
+          </button>
+        )}
       </div>
     </header>
   )
 }
 
-function TodayView({
+function Today({
   state,
-  category,
+  filter,
+  sync,
   goalOpen,
-  onCategoryChange,
-  onGoalToggle,
-  onToggleTask,
-  onEditTask,
-  onDeleteTask,
-  onStartTimer,
+  onFilter,
+  onGoal,
+  onToggle,
+  onEdit,
+  onDelete,
+  onTimer,
+  onQuick,
   onAdd
 }: {
   state: DashboardState
-  category: CategoryFilter
+  filter: Filter
+  sync: SyncStatus
   goalOpen: boolean
-  onCategoryChange: (category: CategoryFilter) => void
-  onGoalToggle: () => void
-  onToggleTask: (task: Task) => void
-  onEditTask: (task: Task) => void
-  onDeleteTask: (taskId: string) => void
-  onStartTimer: (task: Task) => void
+  onFilter: (v: Filter) => void
+  onGoal: () => void
+  onToggle: (t: Task) => void
+  onEdit: (t: Task) => void
+  onDelete: (id: string) => void
+  onTimer: (t: Task) => void
+  onQuick: (v: string) => void
   onAdd: () => void
 }) {
   const today = todayKey()
   const tasks = state.tasks
-    .filter((task) => taskMatchesDate(task, today))
-    .filter((task) => category === 'all' || task.category === category)
-    .sort((left, right) => {
-      const completion = Number(taskIsCompleteOn(left, today)) - Number(taskIsCompleteOn(right, today))
-      if (completion !== 0) return completion
-      if (left.priority !== right.priority) return left.priority - right.priority
-      return (left.dueTime ?? '99:99').localeCompare(right.dueTime ?? '99:99')
-    })
-  const completed = tasks.filter((task) => taskIsCompleteOn(task, today)).length
-  const progress = tasks.length ? Math.round((completed / tasks.length) * 100) : 0
-  const goal = state.goals[0]
-
+    .filter((t) => taskMatchesDate(t, today) && (filter === 'all' || t.category === filter))
+    .sort(
+      (a, b) =>
+        Number(taskIsCompleteOn(a, today)) - Number(taskIsCompleteOn(b, today)) ||
+        a.priority - b.priority ||
+        (a.dueTime ?? '99').localeCompare(b.dueTime ?? '99')
+    )
+  const done = tasks.filter((t) => taskIsCompleteOn(t, today)).length
+  const progress = tasks.length ? Math.round((done / tasks.length) * 100) : 0
   return (
-    <section className="view-panel today-view">
+    <section className="view-panel">
       <div className="today-heading">
         <div>
           <p className="eyebrow">{formatLongDate(today)}</p>
-          <h1>Right now</h1>
+          <h1>Make today lighter.</h1>
         </div>
-        <div className="progress-orbit" style={{ '--progress': `${progress * 3.6}deg` } as React.CSSProperties}>
-          <span>{completed}/{tasks.length}</span>
+        <div
+          className="progress-orbit"
+          style={{ '--progress': `${progress * 3.6}deg` } as React.CSSProperties}
+        >
+          <span>{progress}%</span>
         </div>
       </div>
-
-      {goal && <GoalCard goal={goal} tasks={state.tasks} open={goalOpen} onToggle={onGoalToggle} />}
-
-      <CategoryTabs value={category} onChange={onCategoryChange} />
-
+      <QuickAdd onAdd={onQuick} onMore={onAdd} />
+      {sync.phase === 'offline' && (
+        <div className="inline-notice">
+          <WifiOff size={14} />
+          Changes are safe and will sync later.
+        </div>
+      )}
+      {state.goals[0] && (
+        <GoalCard goal={state.goals[0]} tasks={state.tasks} open={goalOpen} onToggle={onGoal} />
+      )}
+      <Filters value={filter} onChange={onFilter} />
       <div className="task-section-heading">
-        <span>{completed === tasks.length && tasks.length > 0 ? 'All clear' : 'Next actions'}</span>
-        <span>{tasks.reduce((sum, task) => sum + (taskIsCompleteOn(task, today) ? 0 : task.estimateMinutes), 0)} min left</span>
+        <span>{tasks.length - done} left</span>
+        <span>
+          {tasks.reduce((sum, t) => sum + (taskIsCompleteOn(t, today) ? 0 : t.estimateMinutes), 0)}{' '}
+          min
+        </span>
       </div>
-
       <div className="task-list">
         {tasks.map((task) => (
           <TaskCard
             key={task.id}
             task={task}
             date={today}
-            onToggle={() => onToggleTask(task)}
-            onEdit={() => onEditTask(task)}
-            onDelete={() => onDeleteTask(task.id)}
-            onStartTimer={() => onStartTimer(task)}
+            onToggle={() => onToggle(task)}
+            onEdit={() => onEdit(task)}
+            onDelete={() => onDelete(task.id)}
+            onTimer={() => onTimer(task)}
           />
         ))}
-        {tasks.length === 0 && (
-          <EmptyState
-            title="Nothing due here"
-            body="Add one concrete next action, or enjoy the clear space."
+        {!tasks.length && (
+          <Empty
+            title="A clean slate"
+            body="Type one thing above. Natural dates and times work too."
           />
         )}
       </div>
-
-      <button className="add-task-button" onClick={onAdd}>
-        <Plus size={18} /> Add a task
-      </button>
     </section>
   )
 }
-
-function GoalCard({ goal, tasks, open, onToggle }: { goal: Goal; tasks: Task[]; open: boolean; onToggle: () => void }) {
-  const day = goalDay(goal)
-  const goalTasks = tasks.filter((task) => task.goalId === goal.id)
-  const completedSessions = goalTasks.reduce((sum, task) => sum + task.completedDates.length, 0)
-  const phaseIndex = day <= 56 ? 0 : day <= 140 ? 1 : day <= 252 ? 2 : 3
-
+function QuickAdd({ onAdd, onMore }: { onAdd: (v: string) => void; onMore: () => void }) {
+  const [value, setValue] = useState('')
+  const parsed = useMemo(() => (value.trim() ? parseQuickTask(value) : null), [value])
+  const submit = () => {
+    if (!value.trim()) return
+    onAdd(value)
+    setValue('')
+  }
   return (
-    <article className={`goal-card ${open ? 'open' : ''}`}>
-      <button className="goal-summary" onClick={onToggle} aria-expanded={open}>
-        <div className="goal-icon"><Target size={18} /></div>
-        <div className="goal-copy">
-          <span className="goal-kicker">12-month goal · Day {day}</span>
-          <strong>{goal.title}</strong>
-          <span>{goal.phases[phaseIndex]?.title} · {completedSessions} sessions done</span>
-        </div>
-        <ChevronDown size={17} className="goal-chevron" />
-      </button>
-      {open && (
-        <div className="goal-plan">
-          <div className="goal-progress-track"><span style={{ width: `${(day / 365) * 100}%` }} /></div>
-          {goal.phases.map((phase, index) => (
-            <div key={phase.title} className={`phase-row ${index === phaseIndex ? 'current' : ''}`}>
-              <span className="phase-dot">{index < phaseIndex ? <Check size={11} /> : index + 1}</span>
-              <div><strong>{phase.title}</strong><span>{phase.range}</span><p>{phase.outcome}</p></div>
-            </div>
-          ))}
-          <p className="goal-footnote">Target: {formatShortDate(goal.targetDate)} · 30–60 minutes most days</p>
-        </div>
-      )}
-    </article>
+    <div className="quick-capture">
+      <div>
+        <Sparkles size={17} />
+        <input
+          aria-label="Quick add a task"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && submit()}
+          placeholder="Try “Call Maya tomorrow at 6”"
+        />
+        <button aria-label="Add task" disabled={!value.trim()} onClick={submit}>
+          <Plus size={17} />
+        </button>
+      </div>
+      <footer>
+        <span>
+          {parsed
+            ? `${parsed.dueDate === todayKey() ? 'Today' : formatShortDate(parsed.dueDate)}${parsed.dueTime ? ` · ${timeLabel(parsed.dueTime)}` : ''}`
+            : 'Press Enter to add'}
+        </span>
+        <button onClick={onMore}>
+          More options <MoreHorizontal size={13} />
+        </button>
+      </footer>
+    </div>
   )
 }
-
-function CategoryTabs({ value, onChange }: { value: CategoryFilter; onChange: (value: CategoryFilter) => void }) {
+function Filters({ value, onChange }: { value: Filter; onChange: (v: Filter) => void }) {
   return (
-    <div className="category-tabs" role="tablist" aria-label="Task category">
-      <button className={value === 'all' ? 'active' : ''} onClick={() => onChange('all')}>All</button>
-      {(Object.entries(categoryMeta) as [Category, (typeof categoryMeta)[Category]][]).map(([key, meta]) => (
-        <button key={key} className={value === key ? `active ${key}` : key} onClick={() => onChange(key)}>
-          {meta.label}
+    <div className="category-tabs">
+      {(['all', 'personal', 'work', 'school'] as Filter[]).map((item) => (
+        <button
+          key={item}
+          className={`${item} ${value === item ? 'active' : ''}`}
+          onClick={() => onChange(item)}
+        >
+          {item === 'all' ? 'All' : areas[item].label}
         </button>
       ))}
     </div>
   )
 }
-
+function GoalCard({
+  goal,
+  tasks,
+  open,
+  onToggle
+}: {
+  goal: Goal
+  tasks: Task[]
+  open: boolean
+  onToggle: () => void
+}) {
+  const day = goalDay(goal)
+  const phase = day <= 56 ? 0 : day <= 140 ? 1 : day <= 252 ? 2 : 3
+  return (
+    <article className={`goal-card ${open ? 'open' : ''}`}>
+      <button className="goal-summary" onClick={onToggle}>
+        <span className="goal-icon">
+          <Target size={18} />
+        </span>
+        <span className="goal-copy">
+          <small>DAY {day} · LONG VIEW</small>
+          <strong>{goal.title}</strong>
+          <i>
+            {tasks
+              .filter((t) => t.goalId === goal.id)
+              .reduce((n, t) => n + t.completedDates.length, 0)}{' '}
+            sessions
+          </i>
+        </span>
+        <ChevronDown size={17} />
+      </button>
+      {open && (
+        <div className="goal-plan">
+          <div className="goal-progress">
+            <i style={{ width: `${(day / 365) * 100}%` }} />
+          </div>
+          {goal.phases.map((p, i) => (
+            <div className={`phase-row ${i === phase ? 'current' : ''}`} key={p.title}>
+              <span>{i < phase ? <Check size={11} /> : i + 1}</span>
+              <div>
+                <strong>{p.title}</strong>
+                <small>{p.range}</small>
+                <p>{p.outcome}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </article>
+  )
+}
 function TaskCard({
   task,
   date,
   onToggle,
   onEdit,
   onDelete,
-  onStartTimer
+  onTimer
 }: {
   task: Task
   date: string
   onToggle: () => void
   onEdit: () => void
   onDelete: () => void
-  onStartTimer: () => void
+  onTimer: () => void
 }) {
-  const complete = taskIsCompleteOn(task, date)
-  const CategoryIcon = categoryMeta[task.category].icon
-
+  const done = taskIsCompleteOn(task, date)
+  const Icon = areas[task.category].icon
   return (
-    <article className={`task-card ${task.category} ${complete ? 'complete' : ''}`}>
-      <button className="task-check" onClick={onToggle} aria-label={complete ? `Mark ${task.title} incomplete` : `Complete ${task.title}`}>
-        {complete && <Check size={15} strokeWidth={3} />}
+    <article className={`task-card ${task.category} ${done ? 'complete' : ''}`}>
+      <button
+        aria-label={done ? `Mark ${task.title} incomplete` : `Complete ${task.title}`}
+        className="task-check"
+        onClick={onToggle}
+      >
+        {done && <Check size={14} />}
       </button>
       <div className="task-main">
-        <button className="task-title" onClick={onEdit}>{task.title}</button>
+        <button className="task-title" onClick={onEdit}>
+          {task.title}
+        </button>
         <div className="task-meta">
-          <span className={`category-label ${task.category}`}><CategoryIcon size={12} />{categoryMeta[task.category].label}</span>
-          {task.dueTime && <span><Clock3 size={12} />{task.dueTime}</span>}
-          <span>{task.estimateMinutes} min</span>
-          {task.recurrence && <span><RotateCcw size={11} />{task.recurrence.kind}</span>}
-          {task.rolledOverFrom && !complete && <span className="carried">carried over</span>}
+          <span className={task.category}>
+            <Icon size={11} />
+            {areas[task.category].label}
+          </span>
+          {task.dueTime && (
+            <span>
+              <Clock3 size={11} />
+              {timeLabel(task.dueTime)}
+            </span>
+          )}
+          <span>{task.estimateMinutes}m</span>
+          {task.recurrence && (
+            <span>
+              <RotateCcw size={10} />
+              {task.recurrence.kind}
+            </span>
+          )}
         </div>
       </div>
-      {!complete && (
-        <button className="task-timer" onClick={onStartTimer} aria-label={`Start ${task.estimateMinutes} minute timer`} title="Start timer">
-          <Play size={15} fill="currentColor" />
+      {!done && (
+        <button
+          aria-label={`Start ${task.estimateMinutes} minute timer`}
+          className="task-timer"
+          onClick={onTimer}
+        >
+          <Play size={14} />
         </button>
       )}
       <div className="task-actions">
-        <button onClick={onEdit} aria-label={`Edit ${task.title}`}><Pencil size={14} /></button>
-        <button onClick={onDelete} aria-label={`Delete ${task.title}`}><Trash2 size={14} /></button>
+        <button aria-label={`Edit ${task.title}`} onClick={onEdit}>
+          <Pencil size={14} />
+        </button>
+        <button aria-label={`Delete ${task.title}`} onClick={onDelete}>
+          <Trash2 size={14} />
+        </button>
       </div>
     </article>
   )
 }
 
-function CalendarView({
+function Calendar({
   tasks,
-  category,
-  selectedDate,
-  visibleMonth,
-  onCategoryChange,
-  onSelectDate,
-  onMonthChange,
-  onToggleTask,
-  onEditTask,
-  onDeleteTask,
-  onStartTimer,
+  filter,
+  selected,
+  month,
+  onFilter,
+  onSelected,
+  onMonth,
+  onToggle,
+  onEdit,
+  onDelete,
+  onTimer,
   onAdd
 }: {
   tasks: Task[]
-  category: CategoryFilter
-  selectedDate: string
-  visibleMonth: string
-  onCategoryChange: (category: CategoryFilter) => void
-  onSelectDate: (date: string) => void
-  onMonthChange: (date: string) => void
-  onToggleTask: (task: Task, date: string) => void
-  onEditTask: (task: Task) => void
-  onDeleteTask: (taskId: string) => void
-  onStartTimer: (task: Task) => void
+  filter: Filter
+  selected: string
+  month: string
+  onFilter: (v: Filter) => void
+  onSelected: (v: string) => void
+  onMonth: (v: string) => void
+  onToggle: (t: Task, d: string) => void
+  onEdit: (t: Task) => void
+  onDelete: (id: string) => void
+  onTimer: (t: Task) => void
   onAdd: () => void
 }) {
-  const filteredTasks = tasks.filter((task) => category === 'all' || task.category === category)
-  const selectedTasks = filteredTasks
-    .filter((task) => taskMatchesDate(task, selectedDate))
-    .sort((left, right) => (left.dueTime ?? '99:99').localeCompare(right.dueTime ?? '99:99'))
-  const days = calendarDays(visibleMonth)
-
+  const filtered = tasks.filter((t) => filter === 'all' || t.category === filter)
+  const agenda = filtered.filter((t) => taskMatchesDate(t, selected))
   return (
-    <section className="view-panel calendar-view">
+    <section className="view-panel">
       <div className="calendar-heading">
-        <div><p className="eyebrow">Plan ahead</p><h1>Calendar</h1></div>
+        <div>
+          <p className="eyebrow">THE SHAPE OF YOUR MONTH</p>
+          <h1>Calendar</h1>
+        </div>
         <div className="month-controls">
-          <button onClick={() => onMonthChange(changeMonth(visibleMonth, -1))} aria-label="Previous month"><ChevronLeft size={18} /></button>
-          <strong>{monthTitle(visibleMonth)}</strong>
-          <button onClick={() => onMonthChange(changeMonth(visibleMonth, 1))} aria-label="Next month"><ChevronRight size={18} /></button>
+          <button onClick={() => onMonth(changeMonth(month, -1))}>
+            <ChevronLeft />
+          </button>
+          <strong>{monthTitle(month)}</strong>
+          <button onClick={() => onMonth(changeMonth(month, 1))}>
+            <ChevronRight />
+          </button>
         </div>
       </div>
-
-      <CategoryTabs value={category} onChange={onCategoryChange} />
-
+      <Filters value={filter} onChange={onFilter} />
       <div className="calendar-grid">
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <span className="weekday" key={`${day}-${index}`}>{day}</span>)}
-        {days.map((date) => {
-          const dayTasks = filteredTasks.filter((task) => taskMatchesDate(task, date))
-          const selected = date === selectedDate
-          const isToday = date === todayKey()
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+          <small key={i}>{d}</small>
+        ))}
+        {calendarDays(month).map((date) => {
+          const dayTasks = filtered.filter((t) => taskMatchesDate(t, date))
           return (
             <button
               key={date}
-              className={`calendar-day ${selected ? 'selected' : ''} ${isToday ? 'today' : ''} ${!isSameMonth(date, visibleMonth) ? 'outside' : ''}`}
-              onClick={() => onSelectDate(date)}
-              aria-label={`${formatLongDate(date)}, ${dayTasks.length} tasks`}
+              className={`calendar-day ${date === selected ? 'selected' : ''} ${date === todayKey() ? 'today' : ''} ${!isSameMonth(date, month) ? 'outside' : ''}`}
+              onClick={() => onSelected(date)}
             >
               <span>{fromDateKey(date).getDate()}</span>
-              <div className="calendar-dots">
-                {Array.from(new Set(dayTasks.map((task) => task.category))).slice(0, 3).map((taskCategory) => (
-                  <i key={taskCategory} className={taskCategory} />
+              <i>
+                {dayTasks.slice(0, 3).map((t) => (
+                  <b className={t.category} key={t.id} />
                 ))}
-              </div>
+              </i>
             </button>
           )
         })}
       </div>
-
       <div className="agenda-heading">
-        <div><span>{selectedDate === todayKey() ? 'Today' : formatLongDate(selectedDate)}</span><small>{selectedTasks.length} {selectedTasks.length === 1 ? 'task' : 'tasks'}</small></div>
-        <button onClick={onAdd}><Plus size={16} /> Add</button>
+        <div>
+          <strong>{selected === todayKey() ? 'Today' : formatLongDate(selected)}</strong>
+          <small>{agenda.length} tasks</small>
+        </div>
+        <button onClick={onAdd}>
+          <Plus size={15} />
+          Add
+        </button>
       </div>
-
-      <div className="task-list compact-list">
-        {selectedTasks.map((task) => (
+      <div className="task-list">
+        {agenda.map((task) => (
           <TaskCard
             key={task.id}
             task={task}
-            date={selectedDate}
-            onToggle={() => onToggleTask(task, selectedDate)}
-            onEdit={() => onEditTask(task)}
-            onDelete={() => onDeleteTask(task.id)}
-            onStartTimer={() => onStartTimer(task)}
+            date={selected}
+            onToggle={() => onToggle(task, selected)}
+            onEdit={() => onEdit(task)}
+            onDelete={() => onDelete(task.id)}
+            onTimer={() => onTimer(task)}
           />
         ))}
-        {selectedTasks.length === 0 && <EmptyState title="Open day" body="Nothing is scheduled here yet." />}
+        {!agenda.length && <Empty title="Open day" body="Nothing needs your attention here." />}
       </div>
     </section>
   )
@@ -670,129 +828,258 @@ function CalendarView({
 
 function SettingsView({
   settings,
-  onSettingsChange
+  sync,
+  onSync,
+  onSettings
 }: {
   settings: DashboardSettings
-  onSettingsChange: (patch: Partial<DashboardSettings>) => void
+  sync: SyncStatus
+  onSync: (s: SyncStatus) => void
+  onSettings: (p: Partial<DashboardSettings>) => void
 }) {
-  const shownOpacity = settings.overlayMode ? settings.overlayOpacity : settings.opacity
-  const changeOpacity = (value: number) => {
-    const key = settings.overlayMode ? 'overlayOpacity' : 'opacity'
-    onSettingsChange({ [key]: value })
-    void window.dashboard.setOpacity(value)
-  }
-
+  const opacity = settings.overlayMode ? settings.overlayOpacity : settings.opacity
   return (
     <section className="view-panel settings-view">
-      <div className="settings-heading"><div><p className="eyebrow">Make it yours</p><h1>Settings</h1></div></div>
-
+      <div className="settings-heading">
+        <p className="eyebrow">QUIETLY YOURS</p>
+        <h1>Settings</h1>
+      </div>
+      <SyncCard status={sync} onStatus={onSync} />
+      <span className="settings-label">WINDOW</span>
       <div className="settings-group">
-        <span className="settings-label">Window</span>
-        <SettingRow
+        <Setting
           icon={settings.alwaysOnTop ? Pin : PinOff}
           title="Always on top"
-          detail="Stay above Chrome, Discord, Spotify, and other windows."
-          control={<Switch checked={settings.alwaysOnTop} onChange={(checked) => {
-            onSettingsChange({ alwaysOnTop: checked })
-            void window.dashboard.setAlwaysOnTop(checked)
-          }} />}
+          detail="Keep the next action within reach."
+          control={
+            <Switch
+              checked={settings.alwaysOnTop}
+              onChange={(v) => {
+                onSettings({ alwaysOnTop: v })
+                void window.dashboard.setAlwaysOnTop(v)
+              }}
+            />
+          }
         />
-        <div className="setting-row opacity-row">
-          <div className="setting-icon"><Blend size={17} /></div>
-          <div className="setting-copy"><strong>Window opacity</strong><span>{Math.round(shownOpacity * 100)}% · {settings.overlayMode ? 'overlay mode' : 'regular mode'}</span></div>
-          <input
-            aria-label="Window opacity"
-            type="range"
-            min="40"
-            max="100"
-            value={Math.round(shownOpacity * 100)}
-            onChange={(event) => changeOpacity(Number(event.target.value) / 100)}
-          />
-        </div>
-        <SettingRow
+        <Setting
           icon={Blend}
-          title="50% overlay mode"
-          detail="Use the half-opacity button in the title bar to switch quickly."
-          control={<Switch checked={settings.overlayMode} onChange={(checked) => {
-            onSettingsChange({ overlayMode: checked })
-            void window.dashboard.setOpacity(checked ? settings.overlayOpacity : settings.opacity)
-          }} />}
+          title="Window opacity"
+          detail={`${Math.round(opacity * 100)}%`}
+          control={
+            <input
+              type="range"
+              min="40"
+              max="100"
+              value={opacity * 100}
+              onChange={(e) => {
+                const v = +e.target.value / 100
+                onSettings({
+                  [settings.overlayMode ? 'overlayOpacity' : 'opacity']: v
+                })
+                void window.dashboard.setOpacity(v)
+              }}
+            />
+          }
+        />
+        <Setting
+          icon={Blend}
+          title="Overlay mode"
+          detail="A softer half-opacity view."
+          control={
+            <Switch
+              checked={settings.overlayMode}
+              onChange={(v) => {
+                onSettings({ overlayMode: v })
+                void window.dashboard.setOpacity(v ? settings.overlayOpacity : settings.opacity)
+              }}
+            />
+          }
         />
       </div>
-
+      <span className="settings-label">SYSTEM</span>
       <div className="settings-group">
-        <span className="settings-label">System</span>
-        <SettingRow
+        <Setting
           icon={RotateCcw}
-          title="Open when Windows starts"
-          detail="Start quietly in the system tray."
-          control={<Switch checked={settings.launchAtLogin} onChange={(checked) => {
-            onSettingsChange({ launchAtLogin: checked })
-            void window.dashboard.setLaunchAtLogin(checked)
-          }} />}
+          title="Open at login"
+          detail={`Start quietly with ${window.dashboard.platform === 'darwin' ? 'your Mac' : 'Windows'}.`}
+          control={
+            <Switch
+              checked={settings.launchAtLogin}
+              onChange={(v) => {
+                onSettings({ launchAtLogin: v })
+                void window.dashboard.setLaunchAtLogin(v)
+              }}
+            />
+          }
         />
-        <SettingRow
+        <Setting
           icon={Bell}
           title="Timer notifications"
-          detail="Notify when a focused task timer ends."
-          control={<Switch checked={settings.notifications} onChange={(checked) => onSettingsChange({ notifications: checked })} />}
+          detail="Know when focus time ends."
+          control={
+            <Switch
+              checked={settings.notifications}
+              onChange={(v) => onSettings({ notifications: v })}
+            />
+          }
         />
       </div>
-
       <div className="privacy-note">
-        <strong>Your dashboard stays on this PC.</strong>
-        <span>No login, cloud sync, tracking, or account connection. Closing the window keeps it available in the tray.</span>
+        <Cloud />
+        <p>
+          <strong>Offline first.</strong>
+          <span>
+            Your dashboard always stays on this computer, with optional account sync across Macs and
+            PCs.
+          </span>
+        </p>
       </div>
-      <p className="shortcut-note">Press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> anywhere to show or hide Dashboard.</p>
     </section>
   )
 }
-
-function SettingRow({ icon: Icon, title, detail, control }: { icon: typeof Pin; title: string; detail: string; control: React.ReactNode }) {
+function SyncCard({ status, onStatus }: { status: SyncStatus; onStatus: (s: SyncStatus) => void }) {
+  const [email, setEmail] = useState(status.email ?? '')
+  const [code, setCode] = useState('')
+  const [otp, setOtp] = useState<OtpStatus>('idle')
+  const send = () => void window.dashboard.requestSyncCode(email).then(onStatus)
+  const verify = (value = code) =>
+    value.length === 6 &&
+    void window.dashboard.verifySyncCode(email, value).then((next) => {
+      setOtp(next.signedIn ? 'success' : 'error')
+      onStatus(next)
+    })
+  return (
+    <section className="sync-card">
+      <header>
+        <span>
+          <Cloud />
+        </span>
+        <div>
+          <small>ACROSS YOUR COMPUTERS</small>
+          <h2>{status.signedIn ? 'Cloud sync is on' : 'Connect your dashboard'}</h2>
+        </div>
+        {status.signedIn && <SyncPill status={status} />}
+      </header>
+      {!status.configured && (
+        <div className="sync-message">
+          <CircleAlert />
+          <p>This build needs its cloud project connected before sign-in can be enabled.</p>
+        </div>
+      )}
+      {status.configured && !status.signedIn && status.phase !== 'code-sent' && (
+        <div className="email-entry">
+          <p>Use the same email on every computer. No password needed.</p>
+          <div>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+            />
+            <button onClick={send}>Send code</button>
+          </div>
+        </div>
+      )}
+      {status.phase === 'code-sent' && (
+        <div className="otp-panel">
+          <p>{status.message}</p>
+          <OtpInput value={code} onChange={setCode} onComplete={verify} status={otp} autoFocus />
+        </div>
+      )}
+      {status.signedIn && (
+        <div className="sync-account">
+          <p>
+            <strong>{status.email}</strong>
+            <span>{status.message ?? 'Your changes are connected.'}</span>
+          </p>
+          <div>
+            <button onClick={() => void window.dashboard.syncNow().then(onStatus)}>
+              <RefreshCw />
+              Sync now
+            </button>
+            <button onClick={() => void window.dashboard.signOutSync().then(onStatus)}>
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
+      {status.phase === 'error' && <div className="sync-error">{status.message}</div>}
+    </section>
+  )
+}
+function Setting({
+  icon: Icon,
+  title,
+  detail,
+  control
+}: {
+  icon: typeof Pin
+  title: string
+  detail: string
+  control: React.ReactNode
+}) {
   return (
     <div className="setting-row">
-      <div className="setting-icon"><Icon size={17} /></div>
-      <div className="setting-copy"><strong>{title}</strong><span>{detail}</span></div>
+      <span>
+        <Icon />
+      </span>
+      <p>
+        <strong>{title}</strong>
+        <small>{detail}</small>
+      </p>
       {control}
     </div>
   )
 }
-
-function Switch({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
-  return <button className={`switch ${checked ? 'on' : ''}`} role="switch" aria-checked={checked} onClick={() => onChange(!checked)}><span /></button>
-}
-
-function BottomNav({ view, onChange }: { view: View; onChange: (view: View) => void }) {
+function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <nav className="bottom-nav" aria-label="Dashboard views">
-      <button className={view === 'today' ? 'active' : ''} onClick={() => onChange('today')}><LayoutList size={18} /><span>Today</span></button>
-      <button className={view === 'calendar' ? 'active' : ''} onClick={() => onChange('calendar')}><CalendarDays size={18} /><span>Calendar</span></button>
-      <button className={view === 'settings' ? 'active' : ''} onClick={() => onChange('settings')}><Settings size={18} /><span>Settings</span></button>
-    </nav>
+    <button
+      className={`switch ${checked ? 'on' : ''}`}
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+    >
+      <i />
+    </button>
   )
 }
-
-function TimerBar({ task, seconds, paused, onPauseResume, onReset, onClose }: {
+function Timer({
+  task,
+  seconds,
+  paused,
+  onPause,
+  onReset,
+  onClose
+}: {
   task: Task
   seconds: number
   paused: boolean
-  onPauseResume: () => void
+  onPause: () => void
   onReset: () => void
   onClose: () => void
 }) {
   return (
     <aside className="timer-bar">
-      <div className="timer-pulse" />
-      <div className="timer-copy"><span>{paused ? 'Paused' : 'Focus timer'}</span><strong>{task.title}</strong></div>
-      <time>{formatCountdown(seconds)}</time>
-      <button onClick={onPauseResume} aria-label={paused ? 'Resume timer' : 'Pause timer'}>{paused ? <Play size={15} fill="currentColor" /> : <Pause size={15} fill="currentColor" />}</button>
-      <button onClick={onReset} aria-label="Reset timer"><RotateCcw size={15} /></button>
-      <button onClick={onClose} aria-label="Close timer"><X size={15} /></button>
+      <i />
+      <p>
+        <small>{paused ? 'PAUSED' : 'FOCUS'}</small>
+        <strong>{task.title}</strong>
+      </p>
+      <time>{countdown(seconds)}</time>
+      <button aria-label={paused ? 'Resume timer' : 'Pause timer'} onClick={onPause}>
+        {paused ? <Play /> : <Pause />}
+      </button>
+      <button aria-label="Reset timer" onClick={onReset}>
+        <RotateCcw />
+      </button>
+      <button aria-label="Close timer" onClick={onClose}>
+        <X />
+      </button>
     </aside>
   )
 }
 
-function TaskComposer({
+function Composer({
   initial,
   defaultDate,
   goals,
@@ -803,65 +1090,256 @@ function TaskComposer({
   defaultDate: string
   goals: Goal[]
   onCancel: () => void
-  onSave: (draft: TaskDraft) => void
+  onSave: (d: TaskDraft) => void
 }) {
-  const [draft, setDraft] = useState<TaskDraft>(initial ?? {
-    title: '',
-    notes: '',
-    category: 'personal',
-    dueDate: defaultDate,
-    dueTime: '',
-    estimateMinutes: 20,
-    recurrence: 'none',
-    priority: 2
-  })
-
-  const patchDraft = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) => {
-    setDraft((current) => ({ ...current, [key]: value }))
+  const [draft, setDraft] = useState<TaskDraft>(
+    initial ?? {
+      title: '',
+      notes: '',
+      category: 'personal',
+      dueDate: defaultDate,
+      dueTime: '',
+      estimateMinutes: 20,
+      recurrence: 'none',
+      priority: 2
+    }
+  )
+  const [more, setMore] = useState(Boolean(initial))
+  const [customDate, setCustomDate] = useState(
+    ![todayKey(), addDays(todayKey(), 1), nextWeekend()].includes(draft.dueDate)
+  )
+  const [customTime, setCustomTime] = useState(
+    Boolean(draft.dueTime && !['09:00', '13:00', '18:00'].includes(draft.dueTime))
+  )
+  const [time, setTime] = useState(timeLabel(draft.dueTime))
+  const [badTime, setBadTime] = useState(false)
+  const patch = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) =>
+    setDraft((d) => ({ ...d, [key]: value }))
+  const commitTime = () => {
+    const parsed = parseFlexibleTime(time)
+    if (parsed === null) {
+      setBadTime(true)
+      return false
+    }
+    patch('dueTime', parsed)
+    setBadTime(false)
+    return true
   }
-
+  const dates = [
+    [todayKey(), 'Today'],
+    [addDays(todayKey(), 1), 'Tomorrow'],
+    [nextWeekend(), 'Weekend']
+  ]
+  const times = [
+    ['', 'Anytime'],
+    ['09:00', 'Morning'],
+    ['13:00', 'Afternoon'],
+    ['18:00', 'Evening']
+  ]
   return (
-    <div className="composer-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCancel()}>
-      <form className="task-composer" onSubmit={(event) => {
-        event.preventDefault()
-        if (draft.title.trim()) onSave(draft)
-      }}>
-        <div className="composer-heading">
-          <div><p className="eyebrow">{initial ? 'Change the plan' : 'Capture the next action'}</p><h2>{initial ? 'Edit task' : 'New task'}</h2></div>
-          <button type="button" onClick={onCancel} aria-label="Close"><X size={18} /></button>
+    <div
+      className="composer-backdrop"
+      onMouseDown={(e) => e.target === e.currentTarget && onCancel()}
+    >
+      <form
+        className="task-composer"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if ((!customTime || commitTime()) && draft.title.trim()) onSave(draft)
+        }}
+      >
+        <header>
+          <div>
+            <p className="eyebrow">ONE CLEAR NEXT ACTION</p>
+            <h2>{initial ? 'Edit task' : 'Add a task'}</h2>
+          </div>
+          <button type="button" onClick={onCancel}>
+            <X />
+          </button>
+        </header>
+        <label className="field">
+          <span>What needs doing?</span>
+          <input
+            autoFocus
+            value={draft.title}
+            onChange={(e) => patch('title', e.target.value)}
+            placeholder="Keep it concrete"
+          />
+        </label>
+        <div className="schedule">
+          <span>When?</span>
+          <div className="choice-row">
+            {dates.map(([date, label]) => (
+              <button
+                type="button"
+                className={!customDate && draft.dueDate === date ? 'active' : ''}
+                key={label}
+                onClick={() => {
+                  patch('dueDate', date)
+                  setCustomDate(false)
+                }}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={customDate ? 'active' : ''}
+              onClick={() => setCustomDate(true)}
+            >
+              Pick date
+            </button>
+          </div>
+          {customDate && (
+            <input
+              type="date"
+              value={draft.dueDate}
+              onChange={(e) => patch('dueDate', e.target.value)}
+            />
+          )}
         </div>
-
-        <label className="field full"><span>What needs doing?</span><input autoFocus value={draft.title} onChange={(event) => patchDraft('title', event.target.value)} placeholder="One clear next action" /></label>
-
-        <fieldset className="composer-categories">
-          <legend>Area</legend>
-          {(Object.entries(categoryMeta) as [Category, (typeof categoryMeta)[Category]][]).map(([key, meta]) => {
-            const Icon = meta.icon
-            return <button type="button" key={key} className={`${key} ${draft.category === key ? 'active' : ''}`} onClick={() => patchDraft('category', key)}><Icon size={14} />{meta.label}</button>
-          })}
-        </fieldset>
-
-        <div className="field-grid">
-          <label className="field"><span>Date</span><input type="date" value={draft.dueDate} onChange={(event) => patchDraft('dueDate', event.target.value)} required /></label>
-          <label className="field"><span>Time</span><input type="time" value={draft.dueTime} onChange={(event) => patchDraft('dueTime', event.target.value)} /></label>
-          <label className="field"><span>Time limit</span><div className="input-suffix"><input type="number" min="1" max="480" value={draft.estimateMinutes} onChange={(event) => patchDraft('estimateMinutes', Math.max(1, Number(event.target.value)))} /><span>min</span></div></label>
-          <label className="field"><span>Repeat</span><select value={draft.recurrence} onChange={(event) => patchDraft('recurrence', event.target.value as TaskDraft['recurrence'])}><option value="none">Doesn't repeat</option><option value="daily">Daily</option><option value="weekdays">Weekdays</option><option value="weekly">Weekly</option></select></label>
+        <div className="schedule">
+          <span>What time?</span>
+          <div className="choice-row time-choices">
+            {times.map(([value, label]) => (
+              <button
+                type="button"
+                className={!customTime && draft.dueTime === value ? 'active' : ''}
+                key={label}
+                onClick={() => {
+                  patch('dueTime', value)
+                  setCustomTime(false)
+                }}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={customTime ? 'active' : ''}
+              onClick={() => setCustomTime(true)}
+            >
+              Custom
+            </button>
+          </div>
+          {customTime && (
+            <label className={`custom-time ${badTime ? 'error' : ''}`}>
+              <input
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                onBlur={commitTime}
+                placeholder="9, 9am, or 14:30"
+              />
+              {badTime && <small>Try “9am” or “14:30”.</small>}
+            </label>
+          )}
         </div>
-
-        <label className="field full"><span>Notes <i>optional</i></span><textarea rows={3} value={draft.notes} onChange={(event) => patchDraft('notes', event.target.value)} placeholder="Context, phone number, or the first tiny step" /></label>
-
-        {goals.length > 0 && (
-          <label className="field full"><span>Goal <i>optional</i></span><select value={draft.goalId ?? ''} onChange={(event) => patchDraft('goalId', event.target.value || undefined)}><option value="">No linked goal</option>{goals.map((goal) => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>
+        <button type="button" className="more-toggle" onClick={() => setMore(!more)}>
+          More options <ChevronDown className={more ? 'open' : ''} />
+        </button>
+        {more && (
+          <div className="advanced-fields">
+            <fieldset>
+              <legend>Area</legend>
+              {(Object.keys(areas) as Category[]).map((key) => {
+                const Icon = areas[key].icon
+                return (
+                  <button
+                    type="button"
+                    className={draft.category === key ? `active ${key}` : key}
+                    onClick={() => patch('category', key)}
+                    key={key}
+                  >
+                    <Icon />
+                    {areas[key].label}
+                  </button>
+                )
+              })}
+            </fieldset>
+            <div className="duration-row">
+              <p>
+                <strong>Focus estimate</strong>
+                <small>Tap the pencil to adjust</small>
+              </p>
+              <DurationPicker
+                value={{
+                  hours: Math.floor(draft.estimateMinutes / 60),
+                  minutes: draft.estimateMinutes % 60
+                }}
+                maxHours={8}
+                maxMinutes={59}
+                onChange={({ hours, minutes }) =>
+                  patch('estimateMinutes', Math.max(1, hours * 60 + minutes))
+                }
+              />
+            </div>
+            <div className="field-grid">
+              <label className="field">
+                <span>Repeat</span>
+                <select
+                  value={draft.recurrence}
+                  onChange={(e) => patch('recurrence', e.target.value as TaskDraft['recurrence'])}
+                >
+                  <option value="none">Never</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekdays">Weekdays</option>
+                  <option value="weekly">Weekly</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Priority</span>
+                <select
+                  value={draft.priority}
+                  onChange={(e) => patch('priority', +e.target.value as 1 | 2 | 3)}
+                >
+                  <option value="1">High</option>
+                  <option value="2">Normal</option>
+                  <option value="3">Low</option>
+                </select>
+              </label>
+            </div>
+            {goals.length > 0 && (
+              <label className="field">
+                <span>Goal</span>
+                <select
+                  value={draft.goalId ?? ''}
+                  onChange={(e) => patch('goalId', e.target.value || undefined)}
+                >
+                  <option value="">No goal</option>
+                  {goals.map((g) => (
+                    <option value={g.id} key={g.id}>
+                      {g.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="field">
+              <span>Notes</span>
+              <textarea
+                rows={3}
+                value={draft.notes}
+                onChange={(e) => patch('notes', e.target.value)}
+              />
+            </label>
+          </div>
         )}
-
-        <div className="composer-actions"><button type="button" className="secondary" onClick={onCancel}>Cancel</button><button type="submit" className="primary" disabled={!draft.title.trim()}>{initial ? 'Save changes' : 'Add task'}</button></div>
+        <footer className="composer-actions">
+          <button type="button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button disabled={!draft.title.trim()}>{initial ? 'Save changes' : 'Add task'}</button>
+        </footer>
       </form>
     </div>
   )
 }
-
-function EmptyState({ title, body }: { title: string; body: string }) {
-  return <div className="empty-state"><div><Check size={18} /></div><strong>{title}</strong><span>{body}</span></div>
+function Empty({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="empty-state">
+      <Sparkles />
+      <strong>{title}</strong>
+      <span>{body}</span>
+    </div>
+  )
 }
-
-export default App

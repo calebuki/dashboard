@@ -1,4 +1,4 @@
-name: Build Windows release
+name: Build desktop release
 
 on:
   push:
@@ -11,34 +11,69 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    env:
+      MAIN_VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      MAIN_VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
     steps:
-      - name: Check out source
-        uses: actions/checkout@v7
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:win
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-release
+          path: |
+            release/Dashboard-Setup-*.exe
+            release/Dashboard-Setup-*.exe.blockmap
+            release/latest.yml
+          if-no-files-found: error
 
-      - name: Install dependencies
-        run: npm ci
+  macos:
+    runs-on: macos-latest
+    env:
+      MAIN_VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      MAIN_VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:mac
+      - name: Validate signing when configured
+        if: ${{ env.CSC_LINK != '' }}
+        run: codesign --verify --deep --strict --verbose=2 release/mac-universal/Dashboard.app
+      - uses: actions/upload-artifact@v6
+        with:
+          name: macos-release
+          path: |
+            release/Dashboard-*-mac-universal.dmg
+            release/Dashboard-*-mac-universal.dmg.blockmap
+            release/Dashboard-*-mac-universal.zip
+            release/Dashboard-*-mac-universal.zip.blockmap
+            release/latest-mac.yml
+          if-no-files-found: error
 
-      - name: Test
-        run: npm test
-
-      - name: Build installer
-        run: npm run build:win
-
+  release:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: release-assets
+          merge-multiple: true
       - name: Publish GitHub release
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          $assets = @(
-            (Get-ChildItem -LiteralPath release -Filter 'Dashboard-Setup-*.exe' -File).FullName
-            (Get-ChildItem -LiteralPath release -Filter 'Dashboard-Setup-*.exe.blockmap' -File).FullName
-            (Resolve-Path -LiteralPath 'release/latest.yml').Path
-          )
-          if ($assets.Count -ne 3) { throw "Expected exactly three release assets, found $($assets.Count)." }
-          gh release create $env:GITHUB_REF_NAME $assets --generate-notes --title "Dashboard $env:GITHUB_REF_NAME"
+        run: gh release create "$GITHUB_REF_NAME" release-assets/* --generate-notes --title "Dashboard $GITHUB_REF_NAME"

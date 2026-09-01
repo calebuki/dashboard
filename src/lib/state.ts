@@ -18,6 +18,7 @@ function makeTask(
     rollover: true,
     rolloverCount: 0,
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     ...task
   }
 }
@@ -53,11 +54,12 @@ export function createInitialState(): DashboardState {
         range: 'Weeks 37–52',
         outcome: 'Sustain conversations, write clearly, and pass a B1-style practice assessment.'
       }
-    ]
+    ],
+    updatedAt: new Date().toISOString()
   }
 
   return {
-    version: 1,
+    version: 2,
     goals: [swedishGoal],
     settings: {
       alwaysOnTop: true,
@@ -71,7 +73,8 @@ export function createInitialState(): DashboardState {
     tasks: [
       makeTask({
         title: 'Swedish recall session',
-        notes: 'Use active recall: review yesterday, then learn one small set of words or patterns.',
+        notes:
+          'Use active recall: review yesterday, then learn one small set of words or patterns.',
         category: 'personal',
         dueDate: today,
         dueTime: '18:00',
@@ -102,7 +105,8 @@ export function createInitialState(): DashboardState {
       }),
       makeTask({
         title: 'Weekly Swedish checkpoint',
-        notes: 'Have a longer conversation or record a two-minute summary, then note one weak area.',
+        notes:
+          'Have a longer conversation or record a two-minute summary, then note one weak area.',
         category: 'personal',
         dueDate: addDays(today, 6),
         estimateMinutes: 45,
@@ -134,6 +138,22 @@ export function createInitialState(): DashboardState {
   }
 }
 
+export function normalizeDashboardState(stored: DashboardState): DashboardState {
+  const now = new Date().toISOString()
+  return {
+    ...stored,
+    version: 2,
+    tasks: stored.tasks.map((task) => ({
+      ...task,
+      updatedAt: task.updatedAt ?? task.createdAt ?? now
+    })),
+    goals: stored.goals.map((goal) => ({
+      ...goal,
+      updatedAt: goal.updatedAt ?? now
+    }))
+  }
+}
+
 export function rolloverTasks(state: DashboardState, currentDate = todayKey()): DashboardState {
   let changed = false
   const tasks = state.tasks.map((task) => {
@@ -145,7 +165,8 @@ export function rolloverTasks(state: DashboardState, currentDate = todayKey()): 
       ...task,
       rolledOverFrom: task.rolledOverFrom ?? task.dueDate,
       rolloverCount: task.rolloverCount + Math.max(1, daysBetween(task.dueDate, currentDate)),
-      dueDate: currentDate
+      dueDate: currentDate,
+      updatedAt: new Date().toISOString()
     }
   })
 
@@ -163,7 +184,12 @@ export function toggleTaskComplete(
 ): Task {
   if (!task.recurrence) {
     const completed = !task.completed
-    return { ...task, completed, completedAt: completed ? now : undefined }
+    return {
+      ...task,
+      completed,
+      completedAt: completed ? now : undefined,
+      updatedAt: now
+    }
   }
 
   const isComplete = task.completedDates.includes(dateKey)
@@ -171,19 +197,18 @@ export function toggleTaskComplete(
     return {
       ...task,
       completedDates: task.completedDates.filter((date) => date !== dateKey),
-      dueDate: dateKey
+      dueDate: dateKey,
+      updatedAt: now
     }
   }
 
-  const nextDue = nextDateForRecurrence(
-    dateKey,
-    task.recurrence.kind
-  )
+  const nextDue = nextDateForRecurrence(dateKey, task.recurrence.kind)
   return {
     ...task,
     completedDates: [...task.completedDates, dateKey].sort(),
     dueDate: nextDue,
-    rolledOverFrom: undefined
+    rolledOverFrom: undefined,
+    updatedAt: now
   }
 }
 
