@@ -1,6 +1,6 @@
 {
   "name": "dashboard-desktop",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A calm, always-on-top Mac and Windows dashboard with offline-first cross-computer sync.",
   "author": "Caleb Uki",
   "license": "MIT",
@@ -23,7 +23,6 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
-    "@types/flubber": "0.4.0",
     "@types/node": "26.2.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
@@ -107,14 +106,10 @@
     ]
   },
   "dependencies": {
-    "@radix-ui/react-slot": "1.2.4",
     "@supabase/supabase-js": "2.112.4",
     "chrono-node": "2.10.1",
     "clsx": "2.1.1",
-    "figma-squircle": "1.1.0",
-    "flubber": "0.4.2",
     "motion": "13.1.1",
-    "react-use-measure": "2.1.7",
     "tailwind-merge": "3.3.1"
   }
 }

@@ -18,6 +18,8 @@ export interface Task {
   recurrence: Recurrence | null
   priority: 1 | 2 | 3
   goalId?: string
+  /** Minutes before `dueTime` to send a reminder. `null`/missing means no timed reminder. */
+  remindBefore?: number | null
   completed: boolean
   completedAt?: string
   completedDates: string[]
@@ -28,22 +30,31 @@ export interface Task {
   updatedAt: string
 }
 
-export interface GoalPhase {
-  title: string
-  range: string
-  outcome: string
-}
+export type GoalColor = 'lime' | 'sky' | 'violet' | 'coral' | 'amber' | 'mint'
 
+/**
+ * A goal is a simple weekly rhythm: "do this N times a week". Progress comes from
+ * manual check-ins plus completions of any task linked to the goal.
+ */
 export interface Goal {
   id: string
   title: string
-  target: string
-  startDate: string
-  targetDate: string
-  color: string
-  phases: GoalPhase[]
+  emoji: string
+  color: GoalColor
+  weeklyTarget: number
+  checkins: string[]
+  createdAt: string
   updatedAt: string
 }
+
+export interface GoalDraft {
+  title: string
+  emoji: string
+  color: GoalColor
+  weeklyTarget: number
+}
+
+export type ThemePreference = 'system' | 'light' | 'dark'
 
 export interface DashboardSettings {
   alwaysOnTop: boolean
@@ -52,6 +63,7 @@ export interface DashboardSettings {
   overlayMode: boolean
   launchAtLogin: boolean
   notifications: boolean
+  theme: ThemePreference
 }
 
 export interface ActiveTimer {
@@ -62,7 +74,7 @@ export interface ActiveTimer {
 }
 
 export interface DashboardState {
-  version: 2
+  version: 3
   tasks: Task[]
   goals: Goal[]
   settings: DashboardSettings
@@ -80,6 +92,7 @@ export interface TaskDraft {
   recurrence: RecurrenceKind | 'none'
   priority: 1 | 2 | 3
   goalId?: string
+  remindBefore: number | null
 }
 
 export interface NotificationPayload {
@@ -106,6 +119,7 @@ export interface DashboardBridge {
   setAlwaysOnTop: (enabled: boolean) => Promise<boolean>
   setOpacity: (opacity: number) => Promise<number>
   setLaunchAtLogin: (enabled: boolean) => Promise<boolean>
+  setTheme: (theme: ThemePreference) => Promise<'light' | 'dark'>
   notify: (payload: NotificationPayload) => Promise<boolean>
   getSyncStatus: () => Promise<SyncStatus>
   requestSyncCode: (email: string) => Promise<SyncStatus>

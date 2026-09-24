@@ -1,18 +1,18 @@
 # Dashboard
 
-Dashboard is a calm, always-on-top task panel for macOS and Windows. It combines quick natural-language capture, recurring routines, a calendar, focus timers, long-term goals, and optional offline-first sync across computers.
+Dashboard is a calm, always-on-top task panel for macOS and Windows. It combines natural-language capture, a fast event composer, recurring routines, a calendar, focus timers, weekly goals, and optional offline-first sync across computers.
 
 ## Highlights
 
-- Type `Call Maya tomorrow at 6` to create a correctly scheduled task
-- One-tap Today, Tomorrow, Weekend, Morning, Afternoon, and Evening choices
-- Personal, Work, and School task areas
-- Daily, weekday, and weekly recurrence with automatic rollover
-- Month calendar, focused timers, notifications, and lightweight goals
-- Menu bar/system tray support and a global `⌘/Ctrl + Shift + Space` shortcut
-- Local storage that continues working offline
-- Optional passwordless account sync across Macs and PCs
-- Rare UI Duration Picker and OTP Input, adapted to Dashboard's visual system
+- Type `Lunch with Sam fri 12:30 #work` or `Gym every weekday 7am !` — dates, times, areas, repeats, and importance are understood as you type
+- An event composer with a two-week day strip, month picker, scroll-wheel time picker, quick time presets, durations with end times, and reminders
+- Timed reminders (at start, 10/30/60 minutes, or a day before) plus due-today and due-tomorrow notices
+- Today view grouped into Scheduled, Anytime, Done, and Coming up, with carried-over tasks marked
+- Weekly goals: pick “3× a week”, check in with one tap, and linked tasks count automatically; streaks track consecutive weeks
+- Light, dark, or system theme, with a circular reveal when switching
+- Undo for deletes, keyboard shortcuts (`N`, `/`, `1`–`4`, `Ctrl/⌘ + Z`), and a focus timer with +5 min and Done
+- Menu bar/system tray support, ghost (see-through) mode, and a global `⌘/Ctrl + Shift + Space` shortcut
+- Local storage that keeps working offline, with optional passwordless account sync across Macs and PCs
 
 ## Install
 
@@ -63,4 +63,4 @@ Dashboard stores a local JSON cache in Electron's application-data directory. Wh
 
 ## License
 
-MIT. Rare UI components included in this project are also MIT licensed; see their source headers and the upstream Rare UI project.
+MIT. The Rare UI OTP input included in this project is also MIT licensed; see its source header and the upstream Rare UI project.

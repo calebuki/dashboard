@@ -5,12 +5,13 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  nativeTheme,
   Notification,
   Tray
 } from 'electron'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { DashboardState, NotificationPayload } from '../../src/types'
+import type { DashboardState, NotificationPayload, ThemePreference } from '../../src/types'
 import { normalizeDashboardState } from '../../src/lib/state'
 import { DashboardSyncManager } from './sync'
 
@@ -57,6 +58,18 @@ async function writeState(state: DashboardState): Promise<boolean> {
   } catch (error) {
     console.error('Could not save dashboard state', error)
     return false
+  }
+}
+
+const windowBackground = () => (nativeTheme.shouldUseDarkColors ? '#0f0f0e' : '#f6f5f1')
+
+async function storedTheme(): Promise<ThemePreference> {
+  try {
+    const content = JSON.parse(await readFile(statePath(), 'utf8')) as Partial<DashboardState>
+    const theme = content.settings?.theme
+    return theme === 'light' || theme === 'dark' ? theme : 'system'
+  } catch {
+    return 'system'
   }
 }
 
@@ -121,7 +134,7 @@ function createWindow(): void {
         }
       : {}),
     transparent: false,
-    backgroundColor: '#171814',
+    backgroundColor: windowBackground(),
     alwaysOnTop: true,
     autoHideMenuBar: true,
     resizable: true,
@@ -134,7 +147,7 @@ function createWindow(): void {
   })
 
   mainWindow.setAlwaysOnTop(true, 'floating')
-  mainWindow.setOpacity(0.88)
+  mainWindow.setOpacity(0.94)
 
   if (isDevelopment) {
     mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
@@ -168,7 +181,7 @@ function registerIpc(): void {
     return mainWindow?.isAlwaysOnTop() ?? false
   })
   ipcMain.handle('dashboard:set-opacity', (_event, opacity: number) => {
-    const safeOpacity = Math.min(1, Math.max(0.4, Number(opacity) || 0.88))
+    const safeOpacity = Math.min(1, Math.max(0.4, Number(opacity) || 0.94))
     mainWindow?.setOpacity(safeOpacity)
     return safeOpacity
   })
@@ -178,6 +191,11 @@ function registerIpc(): void {
       args: ['--hidden']
     })
     return app.getLoginItemSettings().openAtLogin
+  })
+  ipcMain.handle('dashboard:set-theme', (_event, theme: ThemePreference) => {
+    nativeTheme.themeSource = theme === 'light' || theme === 'dark' ? theme : 'system'
+    mainWindow?.setBackgroundColor(windowBackground())
+    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
   })
   ipcMain.handle('dashboard:notify', (_event, payload: NotificationPayload) => {
     if (!Notification.isSupported()) return false
@@ -214,8 +232,9 @@ function registerIpc(): void {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   if (process.platform === 'win32') app.setAppUserModelId('com.calebuki.dashboard')
+  nativeTheme.themeSource = await storedTheme()
   registerIpc()
   createWindow()
   createTray()

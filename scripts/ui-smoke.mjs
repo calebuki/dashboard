@@ -43,16 +43,18 @@ async function evaluate(expression) {
   return response.result.value
 }
 
-async function clickButton(label) {
+async function click(selector, description = selector) {
   const clicked = await evaluate(`(() => {
-    const button = [...document.querySelectorAll('button')].find((item) => item.textContent.trim().includes(${JSON.stringify(label)}));
-    if (!button) return false;
-    button.click();
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!element) return false;
+    element.click();
     return true;
   })()`)
-  if (!clicked) throw new Error(`Could not find the ${label} button.`)
-  await new Promise((resolve) => setTimeout(resolve, 120))
+  if (!clicked) throw new Error(`Could not find ${description}.`)
+  await new Promise((resolve) => setTimeout(resolve, 450))
 }
+
+const nav = (label) => click(`.nav button[aria-label="${label}"]`, `the ${label} tab`)
 
 async function capture(name) {
   const result = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
@@ -64,53 +66,50 @@ async function capture(name) {
 await send('Page.enable')
 await send('Runtime.enable')
 
-await clickButton('Today')
-const todayTaskCount = await evaluate('document.querySelectorAll(".task-card").length')
-if (todayTaskCount < 4) throw new Error(`Expected at least four today tasks, found ${todayTaskCount}.`)
+await nav('Today')
+const todayTaskCount = await evaluate('document.querySelectorAll(".task").length')
+if (todayTaskCount < 3) throw new Error(`Expected at least three tasks, found ${todayTaskCount}.`)
 const todayScreenshot = await capture('today-smoke')
 
-let phaseCount = await evaluate('document.querySelectorAll(".phase-row").length')
-if (phaseCount === 0) {
-  await clickButton('Conversational Swedish')
-  phaseCount = await evaluate('document.querySelectorAll(".phase-row").length')
-}
-if (phaseCount !== 4) throw new Error(`Expected four Swedish phases, found ${phaseCount}.`)
+await nav('Goals')
+const goalCount = await evaluate('document.querySelectorAll(".goal-card").length')
+if (goalCount < 1) throw new Error('Expected at least one goal card.')
+const goalDayCount = await evaluate('document.querySelectorAll(".goal-card:first-child .goal-day").length')
+if (goalDayCount !== 7) throw new Error(`Expected a seven-day goal week, found ${goalDayCount}.`)
+const goalsScreenshot = await capture('goals-smoke')
 
-await clickButton('Calendar')
+await nav('Calendar')
 const calendarDayCount = await evaluate('document.querySelectorAll(".calendar-day").length')
 if (calendarDayCount !== 42) throw new Error(`Expected 42 calendar cells, found ${calendarDayCount}.`)
 const calendarScreenshot = await capture('calendar-smoke')
 
-await clickButton('Add')
-const composerVisible = await evaluate('Boolean(document.querySelector(".task-composer"))')
+await click('.agenda-head .soft-button', 'the calendar Add button')
+const composerVisible = await evaluate('Boolean(document.querySelector(".composer-form .day-strip"))')
 if (!composerVisible) throw new Error('The task composer did not open from the calendar.')
+await click('.composer-form .segmented button:last-child', 'the Set a time option')
+const wheelCount = await evaluate('document.querySelectorAll(".composer-form .wheel").length')
+if (wheelCount !== 3) throw new Error(`Expected three time wheels, found ${wheelCount}.`)
 const composerScreenshot = await capture('composer-smoke')
-await clickButton('Cancel')
+await click('.composer-actions .ghost-button', 'the composer Cancel button')
 
-await clickButton('Today')
-const timerStarted = await evaluate(`(() => {
-  const button = document.querySelector('.task-timer');
-  if (!button) return false;
-  button.click();
-  return true;
-})()`)
-if (!timerStarted) throw new Error('A task timer could not be started.')
-await new Promise((resolve) => setTimeout(resolve, 120))
-const timerVisible = await evaluate('Boolean(document.querySelector(".timer-bar"))')
-if (!timerVisible) throw new Error('The focused timer bar did not appear.')
-await evaluate('document.querySelector(".timer-bar button:last-child").click()')
+await nav('Today')
+await click('.task .task-actions button[aria-label^="Start"]', 'a task timer button')
+const timerVisible = await evaluate('Boolean(document.querySelector(".focus-timer"))')
+if (!timerVisible) throw new Error('The focus timer did not appear.')
+await click('.focus-timer button[aria-label="Stop timer"]', 'the Stop timer button')
 
-await clickButton('Settings')
+await nav('Settings')
 const settingRowCount = await evaluate('document.querySelectorAll(".setting-row").length')
-if (settingRowCount !== 5) throw new Error(`Expected five setting rows, found ${settingRowCount}.`)
+if (settingRowCount !== 6) throw new Error(`Expected six setting rows, found ${settingRowCount}.`)
 const settingsScreenshot = await capture('settings-smoke')
 
 socket.close()
 console.log(JSON.stringify({
   todayTaskCount,
-  phaseCount,
+  goalCount,
   calendarDayCount,
+  wheelCount,
   timerVisible,
   settingRowCount,
-  screenshots: [todayScreenshot, calendarScreenshot, composerScreenshot, settingsScreenshot]
+  screenshots: [todayScreenshot, goalsScreenshot, calendarScreenshot, composerScreenshot, settingsScreenshot]
 }, null, 2))

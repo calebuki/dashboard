@@ -414,7 +414,7 @@ export class DashboardSyncManager {
     )
     const merged = normalizeDashboardState({
       ...this.latestLocalState,
-      version: 2,
+      version: 3,
       tasks: [...remoteTasks, ...localOnlyTasks],
       goals: [...remoteGoals, ...localOnlyGoals],
       settings: settingsRow

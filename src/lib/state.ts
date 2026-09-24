@@ -1,9 +1,29 @@
-import type { DashboardState, Goal, Task, TaskDraft } from '../types'
+import type {
+  DashboardSettings,
+  DashboardState,
+  Goal,
+  GoalColor,
+  GoalDraft,
+  Task,
+  TaskDraft
+} from '../types'
 import { addDays, daysBetween, nextDateForRecurrence, todayKey } from './date'
 
 export function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
+
+export const defaultSettings: DashboardSettings = {
+  alwaysOnTop: true,
+  opacity: 0.94,
+  overlayOpacity: 0.5,
+  overlayMode: false,
+  launchAtLogin: false,
+  notifications: true,
+  theme: 'system'
+}
+
+export const goalColors: GoalColor[] = ['lime', 'sky', 'violet', 'coral', 'amber', 'mint']
 
 function makeTask(
   task: Pick<Task, 'title' | 'category' | 'dueDate' | 'estimateMinutes'> & Partial<Task>
@@ -23,119 +43,91 @@ function makeTask(
   }
 }
 
+export function goalFromDraft(draft: GoalDraft): Goal {
+  const now = new Date().toISOString()
+  return {
+    id: createId('goal'),
+    title: draft.title.trim(),
+    emoji: draft.emoji || '🎯',
+    color: draft.color,
+    weeklyTarget: clampTarget(draft.weeklyTarget),
+    checkins: [],
+    createdAt: now,
+    updatedAt: now
+  }
+}
+
+const clampTarget = (value: number) => Math.min(7, Math.max(1, Math.round(value) || 1))
+
 export function createInitialState(): DashboardState {
   const today = todayKey()
-  const targetDate = addDays(today, 364)
-  const swedishGoal: Goal = {
-    id: 'goal-swedish-b1',
-    title: 'Conversational Swedish',
-    target: 'Reach a confident B1 level',
-    startDate: today,
-    targetDate,
-    color: '#d7ff64',
-    phases: [
-      {
-        title: 'Build the base',
-        range: 'Weeks 1–8',
-        outcome: 'Core pronunciation, 800 useful words, and basic sentence patterns.'
-      },
-      {
-        title: 'Everyday Swedish',
-        range: 'Weeks 9–20',
-        outcome: 'Handle routine conversations and follow slow, clear speech.'
-      },
-      {
-        title: 'Use real Swedish',
-        range: 'Weeks 21–36',
-        outcome: 'Read, listen, and speak about familiar topics without translating first.'
-      },
-      {
-        title: 'Prove B1',
-        range: 'Weeks 37–52',
-        outcome: 'Sustain conversations, write clearly, and pass a B1-style practice assessment.'
-      }
-    ],
-    updatedAt: new Date().toISOString()
+  const now = new Date().toISOString()
+  const move: Goal = {
+    id: createId('goal'),
+    title: 'Move my body',
+    emoji: '🏃',
+    color: 'lime',
+    weeklyTarget: 3,
+    checkins: [],
+    createdAt: now,
+    updatedAt: now
   }
 
   return {
-    version: 2,
-    goals: [swedishGoal],
-    settings: {
-      alwaysOnTop: true,
-      opacity: 0.88,
-      overlayOpacity: 0.5,
-      overlayMode: false,
-      launchAtLogin: false,
-      notifications: true
-    },
+    version: 3,
+    goals: [move],
+    settings: { ...defaultSettings },
     activeTimer: null,
     sentTaskReminders: [],
     tasks: [
       makeTask({
-        title: 'Swedish recall session',
-        notes:
-          'Use active recall: review yesterday, then learn one small set of words or patterns.',
+        title: 'Try the quick add: “Lunch with Sam fri 12:30 #work”',
+        notes: 'Dates, times, #areas and “every day” are understood as you type.',
         category: 'personal',
         dueDate: today,
-        dueTime: '18:00',
-        estimateMinutes: 20,
-        recurrence: { kind: 'daily' },
-        priority: 1,
-        goalId: swedishGoal.id
-      }),
-      makeTask({
-        title: 'Listen to Swedish',
-        notes: 'Use learner audio, radio, or a short video. Repeat one useful sentence aloud.',
-        category: 'personal',
-        dueDate: today,
-        estimateMinutes: 15,
-        recurrence: { kind: 'daily' },
-        priority: 2,
-        goalId: swedishGoal.id
-      }),
-      makeTask({
-        title: 'Speak or write in Swedish',
-        notes: 'Describe your day. Keep moving even when you do not know the perfect word.',
-        category: 'personal',
-        dueDate: today,
-        estimateMinutes: 10,
-        recurrence: { kind: 'daily' },
-        priority: 2,
-        goalId: swedishGoal.id
-      }),
-      makeTask({
-        title: 'Weekly Swedish checkpoint',
-        notes:
-          'Have a longer conversation or record a two-minute summary, then note one weak area.',
-        category: 'personal',
-        dueDate: addDays(today, 6),
-        estimateMinutes: 45,
-        recurrence: { kind: 'weekly' },
-        priority: 2,
-        goalId: swedishGoal.id
-      }),
-      makeTask({
-        title: 'Call the financial aid office',
-        notes: 'Write down your question and student ID before calling.',
-        category: 'school',
-        dueDate: addDays(today, 1),
-        dueTime: '10:00',
-        estimateMinutes: 20,
-        recurrence: null,
+        estimateMinutes: 5,
         priority: 1
       }),
       makeTask({
-        title: 'Choose today’s three work priorities',
-        notes: 'Pick the outcomes that would make today count.',
+        title: 'Plan the three things that matter today',
         category: 'work',
         dueDate: today,
         dueTime: '09:00',
         estimateMinutes: 10,
         recurrence: { kind: 'weekdays' },
-        priority: 1
+        remindBefore: 0
+      }),
+      makeTask({
+        title: '20 minute walk',
+        category: 'personal',
+        dueDate: today,
+        dueTime: '17:30',
+        estimateMinutes: 20,
+        goalId: move.id,
+        remindBefore: 10
+      }),
+      makeTask({
+        title: 'Review notes for next week',
+        category: 'school',
+        dueDate: addDays(today, 2),
+        estimateMinutes: 45
       })
     ]
+  }
+}
+
+/** Legacy (v2) goals carried a long-range phase plan. Keep the goal, drop the plan. */
+function normalizeGoal(goal: Partial<Goal> & { id: string; title: string }, now: string): Goal {
+  const color = goalColors.includes(goal.color as GoalColor) ? (goal.color as GoalColor) : 'lime'
+  return {
+    id: goal.id,
+    title: goal.title,
+    emoji: typeof goal.emoji === 'string' && goal.emoji ? goal.emoji : '🎯',
+    color,
+    weeklyTarget: clampTarget(goal.weeklyTarget ?? 3),
+    checkins: Array.isArray(goal.checkins) ? [...new Set(goal.checkins)].sort() : [],
+    createdAt: goal.createdAt ?? (goal as { startDate?: string }).startDate ?? now,
+    updatedAt: goal.updatedAt ?? now
   }
 }
 
@@ -143,16 +135,16 @@ export function normalizeDashboardState(stored: DashboardState): DashboardState 
   const now = new Date().toISOString()
   return {
     ...stored,
-    version: 2,
+    version: 3,
+    activeTimer: stored.activeTimer ?? null,
     sentTaskReminders: stored.sentTaskReminders ?? [],
-    tasks: stored.tasks.map((task) => ({
+    settings: { ...defaultSettings, ...stored.settings },
+    tasks: (stored.tasks ?? []).map((task) => ({
       ...task,
+      completedDates: task.completedDates ?? [],
       updatedAt: task.updatedAt ?? task.createdAt ?? now
     })),
-    goals: stored.goals.map((goal) => ({
-      ...goal,
-      updatedAt: goal.updatedAt ?? now
-    }))
+    goals: (stored.goals ?? []).map((goal) => normalizeGoal(goal, now))
   }
 }
 
@@ -224,15 +216,26 @@ export function taskFromDraft(draft: TaskDraft): Task {
     estimateMinutes: draft.estimateMinutes,
     recurrence: draft.recurrence === 'none' ? null : { kind: draft.recurrence },
     priority: draft.priority,
-    goalId: draft.goalId
+    goalId: draft.goalId,
+    remindBefore: draft.dueTime ? draft.remindBefore : null
   })
+}
+
+export function applyDraft(task: Task, draft: TaskDraft): Task {
+  return {
+    ...task,
+    ...draft,
+    title: draft.title.trim(),
+    notes: draft.notes.trim(),
+    dueTime: draft.dueTime || undefined,
+    remindBefore: draft.dueTime ? draft.remindBefore : null,
+    recurrence: draft.recurrence === 'none' ? null : { kind: draft.recurrence },
+    rolledOverFrom: draft.dueDate === task.dueDate ? task.rolledOverFrom : undefined,
+    updatedAt: new Date().toISOString()
+  }
 }
 
 export function taskMatchesDate(task: Task, dateKey: string): boolean {
   if (task.completedDates.includes(dateKey)) return true
   return task.dueDate === dateKey
-}
-
-export function goalDay(goal: Goal, currentDate = todayKey()): number {
-  return Math.min(365, Math.max(1, daysBetween(goal.startDate, currentDate) + 1))
 }

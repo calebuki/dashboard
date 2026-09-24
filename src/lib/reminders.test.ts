@@ -21,7 +21,7 @@ const task = (patch: Partial<Task> = {}): Task => ({
 })
 
 const state = (tasks: Task[], sentTaskReminders: string[] = []): DashboardState => ({
-  version: 2,
+  version: 3,
   tasks,
   goals: [],
   settings: {
@@ -30,7 +30,8 @@ const state = (tasks: Task[], sentTaskReminders: string[] = []): DashboardState 
     overlayOpacity: 0.5,
     overlayMode: false,
     launchAtLogin: false,
-    notifications: true
+    notifications: true,
+    theme: 'system'
   },
   activeTimer: null,
   sentTaskReminders
@@ -56,5 +57,23 @@ describe('pendingTaskReminders', () => {
     expect(
       pendingTaskReminders(state([task({ completed: true })]), new Date(2026, 8, 3, 12))
     ).toEqual([])
+  })
+
+  it('sends a timed reminder inside its window and skips stale ones', () => {
+    const timed = task({ dueTime: '15:30', remindBefore: 10 })
+    expect(pendingTaskReminders(state([timed], ['assignment-1:2026-09-03:today']), new Date(2026, 8, 3, 15, 15))).toEqual([])
+    expect(
+      pendingTaskReminders(state([timed], ['assignment-1:2026-09-03:today']), new Date(2026, 8, 3, 15, 21))
+    ).toMatchObject([
+      { key: 'assignment-1:2026-09-03:15:30:at', title: 'In 9 min', body: 'Submit assignment · 3:30pm' }
+    ])
+    expect(
+      pendingTaskReminders(state([timed], ['assignment-1:2026-09-03:today']), new Date(2026, 8, 3, 17, 0))
+    ).toEqual([])
+  })
+
+  it('does not announce a task on the day it was created', () => {
+    const fresh = task({ createdAt: new Date(2026, 8, 3, 9).toISOString() })
+    expect(pendingTaskReminders(state([fresh]), new Date(2026, 8, 3, 12))).toEqual([])
   })
 })

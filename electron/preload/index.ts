@@ -10,6 +10,8 @@ const bridge: DashboardBridge = {
   setOpacity: (opacity) => ipcRenderer.invoke('dashboard:set-opacity', opacity) as Promise<number>,
   setLaunchAtLogin: (enabled) =>
     ipcRenderer.invoke('dashboard:set-launch-at-login', enabled) as Promise<boolean>,
+  setTheme: (theme) =>
+    ipcRenderer.invoke('dashboard:set-theme', theme) as ReturnType<DashboardBridge['setTheme']>,
   notify: (payload: NotificationPayload) =>
     ipcRenderer.invoke('dashboard:notify', payload) as Promise<boolean>,
   getSyncStatus: () =>
