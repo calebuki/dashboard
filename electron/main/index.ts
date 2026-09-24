@@ -24,6 +24,11 @@ const isDevelopment = Boolean(process.env.ELECTRON_RENDERER_URL)
 
 if (isDevelopment) app.commandLine.appendSwitch('remote-debugging-port', '9222')
 
+// Opening Dashboard again (desktop icon, Start menu) should surface the running window,
+// not start a second copy hidden behind the tray.
+if (!app.requestSingleInstanceLock()) app.exit(0)
+app.on('second-instance', () => showWindow())
+
 function statePath(): string {
   return join(app.getPath('userData'), 'dashboard-state.json')
 }
