@@ -50,12 +50,30 @@ function goalFingerprint(goal: Goal): string {
   return goal.title.trim().toLowerCase()
 }
 
+/** Key-order-independent JSON, since Postgres jsonb does not preserve key order. */
+export function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, item: unknown) =>
+    item && typeof item === 'object' && !Array.isArray(item)
+      ? Object.fromEntries(
+          Object.entries(item as Record<string, unknown>)
+            .filter(([, entry]) => entry !== undefined)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        )
+      : item
+  )
+}
+
 function stateFingerprint(state: DashboardState): string {
-  return JSON.stringify({
+  return canonical({
     tasks: state.tasks,
     goals: state.goals,
     settings: state.settings
   })
+}
+
+/** Last writer wins, using each item's own `updatedAt`. */
+function newer<T extends { updatedAt: string }>(local: T, remote: T): T {
+  return (local.updatedAt ?? '') > (remote.updatedAt ?? '') ? local : remote
 }
 
 class EncryptedAuthStorage {
@@ -130,6 +148,7 @@ export class DashboardSyncManager {
   private pushTimer: NodeJS.Timeout | null = null
   private pullTimer: NodeJS.Timeout | null = null
   private syncOperation = Promise.resolve()
+  private connectedUserId: string | null = null
 
   constructor(options: SyncManagerOptions) {
     this.options = options
@@ -158,8 +177,10 @@ export class DashboardSyncManager {
 
     this.client.auth.onAuthStateChange((_event, session) => {
       queueMicrotask(() => {
-        if (session) void this.connect(session.user.id, session.user.email)
-        else this.disconnect()
+        // Token refreshes also land here; only (re)connect for a new account.
+        if (session && session.user.id !== this.connectedUserId)
+          void this.connect(session.user.id, session.user.email)
+        else if (!session && this.connectedUserId) this.disconnect()
       })
     })
 
@@ -249,7 +270,8 @@ export class DashboardSyncManager {
   }
 
   private async connect(userId: string, email?: string): Promise<void> {
-    if (!this.client) return
+    if (!this.client || this.connectedUserId === userId) return
+    this.connectedUserId = userId
     this.publishStatus({
       configured: true,
       signedIn: true,
@@ -279,6 +301,7 @@ export class DashboardSyncManager {
   private disconnect(): void {
     if (this.client && this.channel) void this.client.removeChannel(this.channel)
     this.channel = null
+    this.connectedUserId = null
     this.lastSnapshot = null
     this.lastPushedFingerprint = ''
     this.publishStatus({
@@ -332,36 +355,41 @@ export class DashboardSyncManager {
     if (!this.client || !this.latestLocalState) return
     const userId = await this.currentUserId()
     if (!userId) return
-    const fingerprint = stateFingerprint(this.latestLocalState)
+    const state = this.latestLocalState
+    const fingerprint = stateFingerprint(state)
     if (!force && fingerprint === this.lastPushedFingerprint) return
-    this.publishStatus({
-      ...this.status,
-      phase: 'syncing',
-      message: undefined
-    })
 
-    const currentRows = this.rowsForState(this.latestLocalState, userId)
-    const currentKeys = new Set(currentRows.map((row) => itemKey(row.item_type, row.item_id)))
+    // lastSnapshot mirrors what the server holds, so only differences are sent.
+    const currentRows = this.rowsForState(state, userId)
     const previousRows = this.lastSnapshot ? this.rowsForState(this.lastSnapshot, userId) : []
+    const previous = new Map(
+      previousRows.map((row) => [itemKey(row.item_type, row.item_id), canonical(row.payload)])
+    )
+    const currentKeys = new Set(currentRows.map((row) => itemKey(row.item_type, row.item_id)))
+    const changedRows = currentRows.filter(
+      (row) => previous.get(itemKey(row.item_type, row.item_id)) !== canonical(row.payload)
+    )
     const deletedRows = previousRows
       .filter(
         (row) =>
           !currentKeys.has(itemKey(row.item_type, row.item_id)) && row.item_type !== 'settings'
       )
-      .map((row) => ({
-        ...row,
-        payload: {},
-        deleted_at: new Date().toISOString()
-      }))
+      .map((row) => ({ ...row, payload: {}, deleted_at: new Date().toISOString() }))
 
-    const { error } = await this.client
-      .from('dashboard_items')
-      .upsert([...currentRows, ...deletedRows], {
-        onConflict: 'user_id,item_type,item_id'
-      })
-    if (error) throw error
-    this.lastSnapshot = this.latestLocalState
+    const rows = [...changedRows, ...deletedRows]
+    if (rows.length) {
+      this.publishStatus({ ...this.status, phase: 'syncing', message: undefined })
+      const { error } = await this.client
+        .from('dashboard_items')
+        .upsert(rows, { onConflict: 'user_id,item_type,item_id' })
+      if (error) throw error
+    }
+    this.lastSnapshot = state
     this.lastPushedFingerprint = fingerprint
+    this.publishSynced()
+  }
+
+  private publishSynced(): void {
     this.publishStatus({
       ...this.status,
       phase: 'synced',
@@ -379,9 +407,13 @@ export class DashboardSyncManager {
     const rows = (data ?? []) as DashboardItemRow[]
     if (rows.length === 0) {
       if (uploadWhenEmpty) await this.pushState(true)
+      else this.publishSynced()
       return
     }
 
+    const local = this.latestLocalState
+    const serverBefore = this.lastSnapshot
+    const firstMerge = !serverBefore
     const tombstones = new Set(
       rows.filter((row) => row.deleted_at).map((row) => itemKey(row.item_type, row.item_id))
     )
@@ -392,40 +424,67 @@ export class DashboardSyncManager {
     const remoteGoals = activeRows
       .filter((row) => row.item_type === 'goal')
       .map((row) => row.payload as unknown as Goal)
-    const taskIds = new Set(remoteTasks.map((task) => task.id))
-    const taskFingerprints = new Set(remoteTasks.map(taskFingerprint))
-    const goalIds = new Set(remoteGoals.map((goal) => goal.id))
-    const goalFingerprints = new Set(remoteGoals.map(goalFingerprint))
-
-    const localOnlyTasks = this.latestLocalState.tasks.filter(
-      (task) =>
-        !taskIds.has(task.id) &&
-        !tombstones.has(itemKey('task', task.id)) &&
-        !taskFingerprints.has(taskFingerprint(task))
-    )
-    const localOnlyGoals = this.latestLocalState.goals.filter(
-      (goal) =>
-        !goalIds.has(goal.id) &&
-        !tombstones.has(itemKey('goal', goal.id)) &&
-        !goalFingerprints.has(goalFingerprint(goal))
-    )
     const settingsRow = activeRows.find(
       (row) => row.item_type === 'settings' && row.item_id === 'dashboard'
     )
+    const remoteSettings = settingsRow
+      ? (settingsRow.payload as unknown as DashboardState['settings'])
+      : local.settings
+
+    const mergeItems = <T extends Task | Goal>(
+      type: 'task' | 'goal',
+      localItems: T[],
+      remoteItems: T[],
+      previousServerItems: T[],
+      fingerprint: (item: T) => string
+    ): T[] => {
+      const localById = new Map(localItems.map((item) => [item.id, item]))
+      // Gone locally but on the server last time: deleted here, not uploaded yet.
+      const pendingDeletes = new Set(
+        previousServerItems.map((item) => item.id).filter((id) => !localById.has(id))
+      )
+      const remoteIds = new Set(remoteItems.map((item) => item.id))
+      const remoteFingerprints = new Set(remoteItems.map(fingerprint))
+      const merged = remoteItems
+        .filter((item) => !pendingDeletes.has(item.id))
+        .map((item) => {
+          const mine = localById.get(item.id)
+          return mine ? newer(mine, item) : item
+        })
+      for (const item of localItems) {
+        if (remoteIds.has(item.id) || tombstones.has(itemKey(type, item.id))) continue
+        // On the very first merge, skip local copies of items another computer already uploaded.
+        if (firstMerge && remoteFingerprints.has(fingerprint(item))) continue
+        merged.push(item)
+      }
+      return merged
+    }
+
+    const localSettingsChanged =
+      serverBefore !== null && canonical(local.settings) !== canonical(serverBefore.settings)
     const merged = normalizeDashboardState({
-      ...this.latestLocalState,
+      ...local,
       version: 3,
-      tasks: [...remoteTasks, ...localOnlyTasks],
-      goals: [...remoteGoals, ...localOnlyGoals],
-      settings: settingsRow
-        ? (settingsRow.payload as unknown as DashboardState['settings'])
-        : this.latestLocalState.settings
+      tasks: mergeItems('task', local.tasks, remoteTasks, serverBefore?.tasks ?? [], taskFingerprint),
+      goals: mergeItems('goal', local.goals, remoteGoals, serverBefore?.goals ?? [], goalFingerprint),
+      settings: localSettingsChanged ? local.settings : remoteSettings
     })
 
-    this.latestLocalState = merged
-    this.lastSnapshot = merged
-    await this.options.onRemoteState(merged)
-    await this.pushState(true)
+    this.lastSnapshot = normalizeDashboardState({
+      ...local,
+      version: 3,
+      tasks: remoteTasks,
+      goals: remoteGoals,
+      settings: remoteSettings
+    })
+    this.lastPushedFingerprint = stateFingerprint(this.lastSnapshot)
+
+    // Our own uploads echo back through realtime; only touch the app on real changes.
+    if (stateFingerprint(merged) !== stateFingerprint(local)) {
+      this.latestLocalState = merged
+      await this.options.onRemoteState(merged)
+    }
+    await this.pushState()
   }
 
   private publishStatus(status: SyncStatus): SyncStatus {

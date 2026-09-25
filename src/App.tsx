@@ -88,8 +88,14 @@ export default function App() {
   useEffect(() => {
     document.documentElement.classList.add(`platform-${window.dashboard.platform}`)
     const offSync = window.dashboard.onSyncStatus(setSync)
+    // Synced data replaces tasks, goals, and settings; the timer and sent reminders stay per-device.
     const offRemote = window.dashboard.onRemoteState((remote) =>
-      setState(rolloverTasks(normalizeDashboardState(remote)))
+      setState((current) => {
+        const next = rolloverTasks(normalizeDashboardState(remote))
+        return current
+          ? { ...next, activeTimer: current.activeTimer, sentTaskReminders: current.sentTaskReminders }
+          : next
+      })
     )
     void window.dashboard.getSyncStatus().then(setSync)
     void window.dashboard.loadState().then((stored) => {
@@ -374,7 +380,11 @@ export default function App() {
     const linked = state.tasks.filter((task) => task.goalId === goalId).map((task) => task.id)
     const index = state.goals.findIndex((item) => item.id === goalId)
     const unlink = (tasks: Task[]) =>
-      tasks.map((task) => (task.goalId === goalId ? { ...task, goalId: undefined } : task))
+      tasks.map((task) =>
+        task.goalId === goalId
+          ? { ...task, goalId: undefined, updatedAt: new Date().toISOString() }
+          : task
+      )
     update((current) => ({
       ...current,
       goals: current.goals.filter((item) => item.id !== goalId),
@@ -392,7 +402,9 @@ export default function App() {
               ...current,
               goals,
               tasks: current.tasks.map((task) =>
-                linked.includes(task.id) ? { ...task, goalId: goal.id } : task
+                linked.includes(task.id)
+                  ? { ...task, goalId: goal.id, updatedAt: new Date().toISOString() }
+                  : task
               )
             }
           })
