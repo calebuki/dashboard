@@ -24,6 +24,7 @@ const state = (tasks: Task[], sentTaskReminders: string[] = []): DashboardState 
   version: 3,
   tasks,
   goals: [],
+  notes: [],
   settings: {
     alwaysOnTop: false,
     opacity: 1,

@@ -1,5 +1,8 @@
+import { mkdtemp, readFile, writeFile, mkdir } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { DashboardState, Task } from '../../src/types'
+import type { DashboardState, Note, Task } from '../../src/types'
 import { createInitialState } from '../../src/lib/state'
 
 interface Row {
@@ -16,6 +19,8 @@ const shuffleKeys = (value: Record<string, unknown>) =>
 
 const server = {
   rows: new Map<string, Row>(),
+  images: new Map<string, Uint8Array<ArrayBuffer>>(),
+  log: [] as string[],
   upserts: 0,
   realtime: null as null | (() => void)
 }
@@ -40,6 +45,7 @@ vi.mock('@supabase/supabase-js', () => ({
       }),
       upsert: async (rows: Row[]) => {
         server.upserts += 1
+        rows.forEach((row) => server.log.push(`row:${row.item_type}`))
         rows.forEach((row) =>
           server.rows.set(`${row.item_type}:${row.item_id}`, JSON.parse(JSON.stringify(row)))
         )
@@ -58,7 +64,26 @@ vi.mock('@supabase/supabase-js', () => ({
       }
       return channel
     },
-    removeChannel: async () => {}
+    removeChannel: async () => {},
+    storage: {
+      from: () => ({
+        list: async (folder: string) => ({
+          data: [...server.images.keys()]
+            .filter((path) => path.startsWith(`${folder}/`))
+            .map((path) => ({ name: path.slice(folder.length + 1) })),
+          error: null
+        }),
+        upload: async (path: string, data: Uint8Array) => {
+          server.log.push(`image:${path}`)
+          server.images.set(path, new Uint8Array(data))
+          return { error: null }
+        },
+        download: async (path: string) => {
+          const data = server.images.get(path)
+          return data ? { data: new Blob([data]), error: null } : { data: null, error: new Error('Not found') }
+        }
+      })
+    }
   })
 }))
 
@@ -69,10 +94,10 @@ const { DashboardSyncManager } = await import('./sync')
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 1200))
 
-async function connectedManager(initial: DashboardState) {
+async function connectedManager(initial: DashboardState, userDataPath = '/tmp/dashboard-test') {
   const remoteStates: DashboardState[] = []
   const manager = new DashboardSyncManager({
-    userDataPath: '/tmp/dashboard-test',
+    userDataPath,
     onStatus: () => {},
     onRemoteState: async (state) => {
       remoteStates.push(state)
@@ -94,6 +119,8 @@ const edit = (state: DashboardState, patch: Partial<Task>, index = 0): Dashboard
 describe('DashboardSyncManager', () => {
   beforeEach(() => {
     server.rows.clear()
+    server.images.clear()
+    server.log = []
     server.upserts = 0
     server.realtime = null
   })
@@ -152,5 +179,34 @@ describe('DashboardSyncManager', () => {
     await settle()
 
     expect(remoteStates.at(-1)?.tasks[0].title).toBe('From laptop')
+  })
+
+  it('syncs notes and their images to another computer', async () => {
+    const file = '3f2c1a9e-8b7d-4c6e-9f10-2a3b4c5d6e7f.webp'
+    const laptop = await mkdtemp(join(tmpdir(), 'dashboard-laptop-'))
+    const desktop = await mkdtemp(join(tmpdir(), 'dashboard-desktop-'))
+    await mkdir(join(laptop, 'note-images'))
+    await writeFile(join(laptop, 'note-images', file), 'image-bytes')
+
+    const now = new Date().toISOString()
+    const note: Note = {
+      id: 'note-1',
+      title: 'Trip',
+      html: `<p>Map</p><img src="note-image://local/${file}" alt="">`,
+      pinned: false,
+      createdAt: now,
+      updatedAt: now
+    }
+    await connectedManager({ ...createInitialState(), notes: [note] }, laptop)
+
+    // The image lands before the note that shows it.
+    expect(server.log.indexOf(`image:user-1/${file}`)).toBeGreaterThanOrEqual(0)
+    expect(server.log.indexOf(`image:user-1/${file}`)).toBeLessThan(server.log.indexOf('row:note'))
+
+    const { manager, remoteStates } = await connectedManager(createInitialState(), desktop)
+    expect(remoteStates.at(-1)?.notes.map((n) => n.title)).toEqual(['Trip'])
+    expect(await manager.ensureImage(file)).toBe(true)
+    expect(await readFile(join(desktop, 'note-images', file), 'utf8')).toBe('image-bytes')
+    expect(await manager.ensureImage('../dashboard-state.json')).toBe(false)
   })
 })

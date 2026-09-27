@@ -7,12 +7,15 @@ import {
   nativeImage,
   nativeTheme,
   Notification,
+  protocol,
   Tray
 } from 'electron'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { DashboardState, NotificationPayload, ThemePreference } from '../../src/types'
+import { noteImageFileFromUrl, noteImageScheme } from '../../src/lib/notes'
 import { normalizeDashboardState } from '../../src/lib/state'
+import { noteImageType, readNoteImage, saveNoteImage } from './note-images'
 import { DashboardSyncManager } from './sync'
 
 let mainWindow: BrowserWindow | null = null
@@ -28,6 +31,25 @@ if (isDevelopment) app.commandLine.appendSwitch('remote-debugging-port', '9222')
 // not start a second copy hidden behind the tray.
 if (!app.requestSingleInstanceLock()) app.exit(0)
 app.on('second-instance', () => showWindow())
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: noteImageScheme, privileges: { standard: true, secure: true, supportFetchAPI: true } }
+])
+
+/** Serves note images from disk, fetching them from cloud storage when this computer lacks them. */
+function registerNoteImageProtocol(): void {
+  protocol.handle(noteImageScheme, async (request) => {
+    const file = noteImageFileFromUrl(request.url)
+    if (!file) return new Response(null, { status: 404 })
+    const userData = app.getPath('userData')
+    let data = await readNoteImage(userData, file)
+    if (!data && (await syncManager?.ensureImage(file))) data = await readNoteImage(userData, file)
+    if (!data) return new Response(null, { status: 404 })
+    return new Response(new Uint8Array(data), {
+      headers: { 'Content-Type': noteImageType(file), 'Cache-Control': 'max-age=31536000, immutable' }
+    })
+  })
+}
 
 function statePath(): string {
   return join(app.getPath('userData'), 'dashboard-state.json')
@@ -160,6 +182,10 @@ function createWindow(): void {
     })
   }
 
+  // The window only ever shows the app; never let a dropped file or stray link replace it.
+  mainWindow.webContents.on('will-navigate', (event) => event.preventDefault())
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+
   mainWindow.on('ready-to-show', () => {
     if (!process.argv.includes('--hidden')) showWindow()
   })
@@ -211,6 +237,9 @@ function registerIpc(): void {
     }).show()
     return true
   })
+  ipcMain.handle('dashboard:save-note-image', (_event, data: ArrayBuffer, type: string) =>
+    saveNoteImage(app.getPath('userData'), data, String(type))
+  )
   ipcMain.handle(
     'dashboard:get-sync-status',
     () =>
@@ -240,6 +269,7 @@ function registerIpc(): void {
 app.whenReady().then(async () => {
   if (process.platform === 'win32') app.setAppUserModelId('com.calebuki.dashboard')
   nativeTheme.themeSource = await storedTheme()
+  registerNoteImageProtocol()
   registerIpc()
   createWindow()
   createTray()

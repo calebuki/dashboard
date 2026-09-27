@@ -54,6 +54,19 @@ export interface GoalDraft {
   weeklyTarget: number
 }
 
+/**
+ * A rich-text note. `html` is sanitized markup (see `sanitizeNoteHtml`); pasted images live
+ * outside the note as `note-image://` files so the synced payload stays small.
+ */
+export interface Note {
+  id: string
+  title: string
+  html: string
+  pinned: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 export type ThemePreference = 'system' | 'light' | 'dark'
 
 export interface DashboardSettings {
@@ -77,6 +90,7 @@ export interface DashboardState {
   version: 3
   tasks: Task[]
   goals: Goal[]
+  notes: Note[]
   settings: DashboardSettings
   activeTimer: ActiveTimer | null
   sentTaskReminders: string[]
@@ -121,6 +135,8 @@ export interface DashboardBridge {
   setLaunchAtLogin: (enabled: boolean) => Promise<boolean>
   setTheme: (theme: ThemePreference) => Promise<'light' | 'dark'>
   notify: (payload: NotificationPayload) => Promise<boolean>
+  /** Stores an image on this computer and returns the `note-image://` URL to embed. */
+  saveNoteImage: (data: ArrayBuffer, type: string) => Promise<string>
   getSyncStatus: () => Promise<SyncStatus>
   requestSyncCode: (email: string) => Promise<SyncStatus>
   verifySyncCode: (email: string, code: string) => Promise<SyncStatus>

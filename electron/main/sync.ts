@@ -1,11 +1,15 @@
 import { safeStorage } from 'electron'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js'
-import type { DashboardState, Goal, SyncStatus, Task } from '../../src/types'
+import type { DashboardState, Goal, Note, SyncStatus, Task } from '../../src/types'
+import { isNoteImageFile, noteImageFiles } from '../../src/lib/notes'
 import { normalizeDashboardState } from '../../src/lib/state'
+import { noteImagePath, noteImageType, readNoteImage, writeNoteImage } from './note-images'
 
-type ItemType = 'task' | 'goal' | 'settings'
+type ItemType = 'task' | 'goal' | 'note' | 'settings'
+
+const imageBucket = 'note-images'
 
 interface DashboardItemRow {
   user_id: string
@@ -67,9 +71,16 @@ function stateFingerprint(state: DashboardState): string {
   return canonical({
     tasks: state.tasks,
     goals: state.goals,
+    notes: state.notes,
     settings: state.settings
   })
 }
+
+const fileExists = (path: string) =>
+  access(path).then(
+    () => true,
+    () => false
+  )
 
 /** Last writer wins, using each item's own `updatedAt`. */
 function newer<T extends { updatedAt: string }>(local: T, remote: T): T {
@@ -149,6 +160,9 @@ export class DashboardSyncManager {
   private pullTimer: NodeJS.Timeout | null = null
   private syncOperation = Promise.resolve()
   private connectedUserId: string | null = null
+  /** Image files already in cloud storage for the signed-in account; listed once per sign-in. */
+  private remoteImages: Set<string> | null = null
+  private imageDownloads = new Map<string, Promise<boolean>>()
 
   constructor(options: SyncManagerOptions) {
     this.options = options
@@ -302,6 +316,7 @@ export class DashboardSyncManager {
     if (this.client && this.channel) void this.client.removeChannel(this.channel)
     this.channel = null
     this.connectedUserId = null
+    this.remoteImages = null
     this.lastSnapshot = null
     this.lastPushedFingerprint = ''
     this.publishStatus({
@@ -339,6 +354,13 @@ export class DashboardSyncManager {
         item_type: 'goal' as const,
         item_id: goal.id,
         payload: goal as unknown as Record<string, unknown>,
+        deleted_at: null
+      })),
+      ...state.notes.map((note) => ({
+        user_id: userId,
+        item_type: 'note' as const,
+        item_id: note.id,
+        payload: note as unknown as Record<string, unknown>,
         deleted_at: null
       })),
       {
@@ -379,6 +401,13 @@ export class DashboardSyncManager {
     const rows = [...changedRows, ...deletedRows]
     if (rows.length) {
       this.publishStatus({ ...this.status, phase: 'syncing', message: undefined })
+      // Upload images before the notes that show them, so other computers can fetch them.
+      await this.uploadImages(
+        userId,
+        changedRows
+          .filter((row) => row.item_type === 'note')
+          .flatMap((row) => noteImageFiles(String(row.payload.html ?? '')))
+      )
       const { error } = await this.client
         .from('dashboard_items')
         .upsert(rows, { onConflict: 'user_id,item_type,item_id' })
@@ -424,6 +453,9 @@ export class DashboardSyncManager {
     const remoteGoals = activeRows
       .filter((row) => row.item_type === 'goal')
       .map((row) => row.payload as unknown as Goal)
+    const remoteNotes = activeRows
+      .filter((row) => row.item_type === 'note')
+      .map((row) => row.payload as unknown as Note)
     const settingsRow = activeRows.find(
       (row) => row.item_type === 'settings' && row.item_id === 'dashboard'
     )
@@ -431,8 +463,8 @@ export class DashboardSyncManager {
       ? (settingsRow.payload as unknown as DashboardState['settings'])
       : local.settings
 
-    const mergeItems = <T extends Task | Goal>(
-      type: 'task' | 'goal',
+    const mergeItems = <T extends Task | Goal | Note>(
+      type: 'task' | 'goal' | 'note',
       localItems: T[],
       remoteItems: T[],
       previousServerItems: T[],
@@ -467,6 +499,7 @@ export class DashboardSyncManager {
       version: 3,
       tasks: mergeItems('task', local.tasks, remoteTasks, serverBefore?.tasks ?? [], taskFingerprint),
       goals: mergeItems('goal', local.goals, remoteGoals, serverBefore?.goals ?? [], goalFingerprint),
+      notes: mergeItems('note', local.notes, remoteNotes, serverBefore?.notes ?? [], (note) => note.id),
       settings: localSettingsChanged ? local.settings : remoteSettings
     })
 
@@ -475,6 +508,7 @@ export class DashboardSyncManager {
       version: 3,
       tasks: remoteTasks,
       goals: remoteGoals,
+      notes: remoteNotes,
       settings: remoteSettings
     })
     this.lastPushedFingerprint = stateFingerprint(this.lastSnapshot)
@@ -484,7 +518,76 @@ export class DashboardSyncManager {
       this.latestLocalState = merged
       await this.options.onRemoteState(merged)
     }
+    void this.prefetchImages(merged.notes)
     await this.pushState()
+  }
+
+  /**
+   * Resolves true once `file` is on this computer, downloading it from cloud storage if needed.
+   * The `note-image://` protocol uses this so notes from other computers show their images.
+   */
+  ensureImage(file: string): Promise<boolean> {
+    if (!isNoteImageFile(file)) return Promise.resolve(false)
+    const inFlight = this.imageDownloads.get(file)
+    if (inFlight) return inFlight
+    const run = (async () => {
+      if (await fileExists(noteImagePath(this.options.userDataPath, file))) return true
+      const userId = this.connectedUserId
+      if (!this.client || !userId) return false
+      const { data, error } = await this.client.storage
+        .from(imageBucket)
+        .download(`${userId}/${file}`)
+      if (error || !data) return false
+      await writeNoteImage(this.options.userDataPath, file, new Uint8Array(await data.arrayBuffer()))
+      this.remoteImages?.add(file)
+      return true
+    })()
+      .catch((error: unknown) => {
+        console.error('Could not download note image', error)
+        return false
+      })
+      .finally(() => this.imageDownloads.delete(file))
+    this.imageDownloads.set(file, run)
+    return run
+  }
+
+  /** Keeps every synced note's images on this computer so they still show while offline. */
+  private async prefetchImages(notes: Note[]): Promise<void> {
+    for (const file of new Set(notes.flatMap((note) => noteImageFiles(note.html))))
+      await this.ensureImage(file)
+  }
+
+  private async remoteImageSet(userId: string): Promise<Set<string>> {
+    if (this.remoteImages) return this.remoteImages
+    if (!this.client) return new Set()
+    const names = new Set<string>()
+    const pageSize = 1000
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await this.client.storage
+        .from(imageBucket)
+        .list(userId, { limit: pageSize, offset })
+      if (error) throw error
+      data.forEach((item) => names.add(item.name))
+      if (data.length < pageSize) break
+    }
+    this.remoteImages = names
+    return names
+  }
+
+  private async uploadImages(userId: string, files: string[]): Promise<void> {
+    if (!this.client || files.length === 0) return
+    const remote = await this.remoteImageSet(userId)
+    for (const file of new Set(files)) {
+      if (remote.has(file)) continue
+      // Neither here nor in the cloud (e.g. deleted from disk): nothing to upload.
+      const data = await readNoteImage(this.options.userDataPath, file)
+      if (!data) continue
+      const { error } = await this.client.storage
+        .from(imageBucket)
+        .upload(`${userId}/${file}`, data, { contentType: noteImageType(file), upsert: true })
+      if (error) throw error
+      remote.add(file)
+    }
   }
 
   private publishStatus(status: SyncStatus): SyncStatus {

@@ -8,6 +8,7 @@ import type {
   DashboardState,
   Goal,
   GoalDraft,
+  Note,
   SyncStatus,
   Task,
   TaskDraft,
@@ -16,6 +17,7 @@ import type {
 import { startOfMonth, todayKey } from './lib/date'
 import { relativeDayLabel, timeLabel } from './lib/format'
 import { toggleCheckin } from './lib/goals'
+import { createNote, noteDisplayTitle, noteIsEmpty } from './lib/notes'
 import { parseQuickTask } from './lib/quick-add'
 import { pendingTaskReminders } from './lib/reminders'
 import {
@@ -32,6 +34,7 @@ import { Composer, blankDraft, type ComposerRequest } from './components/Compose
 import { FocusTimer } from './components/FocusTimer'
 import { GoalSheet, GoalsView } from './components/GoalsView'
 import { NavBar, views, type View } from './components/NavBar'
+import { NotesView } from './components/NotesView'
 import { SettingsView } from './components/SettingsView'
 import { TitleBar } from './components/TitleBar'
 import { Toast, type ToastMessage } from './components/Toast'
@@ -74,6 +77,7 @@ export default function App() {
   const [month, setMonth] = useState(startOfMonth(todayKey()))
   const [composer, setComposer] = useState<ComposerRequest | null>(null)
   const [goalSheet, setGoalSheet] = useState<{ goal?: Goal; draft?: GoalDraft } | null>(null)
+  const [openNoteId, setOpenNoteId] = useState<string | null>(null)
   const [toast, setToast] = useState<ToastMessage | null>(null)
   const [now, setNow] = useState(Date.now())
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() =>
@@ -234,11 +238,61 @@ export default function App() {
     })
   }
 
+  /** Leaves the open note; a note left completely blank is discarded rather than kept. */
+  const closeNote = useCallback(() => {
+    if (openNoteId)
+      update((current) => ({
+        ...current,
+        notes: current.notes.filter((note) => note.id !== openNoteId || !noteIsEmpty(note))
+      }))
+    setOpenNoteId(null)
+  }, [openNoteId, update])
+
+  const newNote = useCallback(() => {
+    closeNote()
+    const note = createNote()
+    update((current) => ({ ...current, notes: [...current.notes, note] }))
+    setOpenNoteId(note.id)
+    setView('notes')
+  }, [closeNote, update])
+
   const openNew = useCallback(
-    (date = view === 'calendar' ? selected : todayKey(), text?: string) =>
-      setComposer({ date, text, category: filter === 'all' ? undefined : filter }),
-    [view, selected, filter]
+    (date = view === 'calendar' ? selected : todayKey(), text?: string) => {
+      if (view === 'notes') newNote()
+      else setComposer({ date, text, category: filter === 'all' ? undefined : filter })
+    },
+    [view, selected, filter, newNote]
   )
+
+  const patchNote = (id: string, patch: Partial<Pick<Note, 'title' | 'html' | 'pinned'>>) =>
+    update((current) => ({
+      ...current,
+      notes: current.notes.map((note) =>
+        note.id === id ? { ...note, ...patch, updatedAt: new Date().toISOString() } : note
+      )
+    }))
+
+  const deleteNote = (note: Note) => {
+    if (!state) return
+    const index = state.notes.findIndex((item) => item.id === note.id)
+    // Read the latest copy inside the update, so edits flushed just before deleting are restorable.
+    let removed = note
+    update((current) => {
+      removed = current.notes.find((item) => item.id === note.id) ?? note
+      return { ...current, notes: current.notes.filter((item) => item.id !== note.id) }
+    })
+    setOpenNoteId(null)
+    if (noteIsEmpty(note)) return
+    showToast(`Deleted “${noteDisplayTitle(note)}”`, {
+      label: 'Undo',
+      run: () =>
+        update((current) => {
+          const notes = [...current.notes]
+          notes.splice(Math.min(index, notes.length), 0, removed)
+          return { ...current, notes }
+        })
+    })
+  }
 
   const restoreTask = (task: Task, index: number) =>
     update((current) => {
@@ -431,7 +485,7 @@ export default function App() {
         event.preventDefault()
         flushSync(() => setView('today'))
         document.getElementById('quick-add')?.focus()
-      } else if (/^[1-4]$/.test(event.key)) {
+      } else if (/^[1-5]$/.test(event.key)) {
         setView(views[Number(event.key) - 1].value)
       }
     }
@@ -522,6 +576,20 @@ export default function App() {
                   onEdit={(goal) => setGoalSheet({ goal })}
                 />
               )}
+              {view === 'notes' && (
+                <NotesView
+                  notes={state.notes}
+                  openId={openNoteId}
+                  synced={sync.signedIn}
+                  now={now}
+                  onOpen={setOpenNoteId}
+                  onCreate={newNote}
+                  onClose={closeNote}
+                  onChange={patchNote}
+                  onDelete={deleteNote}
+                  onError={(message) => showToast(message)}
+                />
+              )}
               {view === 'settings' && (
                 <SettingsView
                   settings={state.settings}
@@ -550,7 +618,12 @@ export default function App() {
           )}
         </AnimatePresence>
         <Toast toast={toast} onDismiss={dismissToast} />
-        <NavBar value={view} onChange={setView} onAdd={() => openNew()} />
+        <NavBar
+          value={view}
+          onChange={setView}
+          onAdd={() => openNew()}
+          addLabel={view === 'notes' ? 'New note' : 'New task'}
+        />
 
         <Composer
           request={composer}

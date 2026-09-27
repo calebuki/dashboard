@@ -1,25 +1,28 @@
 import { motion } from 'motion/react'
-import { CalendarDays, Plus, Settings, Sun, Target } from 'lucide-react'
+import { CalendarDays, NotebookPen, Plus, Settings, Sun, Target } from 'lucide-react'
 import { spring } from './primitives'
 import { cn } from '@/lib/utils'
 
-export type View = 'today' | 'calendar' | 'goals' | 'settings'
+export type View = 'today' | 'calendar' | 'goals' | 'notes' | 'settings'
 
 export const views: { value: View; label: string; icon: typeof Sun }[] = [
   { value: 'today', label: 'Today', icon: Sun },
   { value: 'calendar', label: 'Calendar', icon: CalendarDays },
   { value: 'goals', label: 'Goals', icon: Target },
+  { value: 'notes', label: 'Notes', icon: NotebookPen },
   { value: 'settings', label: 'Settings', icon: Settings }
 ]
 
 export function NavBar({
   value,
   onChange,
-  onAdd
+  onAdd,
+  addLabel = 'New task'
 }: {
   value: View
   onChange: (view: View) => void
   onAdd: () => void
+  addLabel?: string
 }) {
   return (
     <div className="nav-dock">
@@ -51,8 +54,8 @@ export function NavBar({
       <motion.button
         type="button"
         className="nav-add"
-        aria-label="New task"
-        title="New task (N)"
+        aria-label={addLabel}
+        title={`${addLabel} (N)`}
         onClick={onAdd}
         whileHover={{ rotate: 90 }}
         whileTap={{ scale: 0.9 }}

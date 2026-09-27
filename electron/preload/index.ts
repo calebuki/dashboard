@@ -14,6 +14,8 @@ const bridge: DashboardBridge = {
     ipcRenderer.invoke('dashboard:set-theme', theme) as ReturnType<DashboardBridge['setTheme']>,
   notify: (payload: NotificationPayload) =>
     ipcRenderer.invoke('dashboard:notify', payload) as Promise<boolean>,
+  saveNoteImage: (data, type) =>
+    ipcRenderer.invoke('dashboard:save-note-image', data, type) as Promise<string>,
   getSyncStatus: () =>
     ipcRenderer.invoke('dashboard:get-sync-status') as ReturnType<DashboardBridge['getSyncStatus']>,
   requestSyncCode: (email) =>

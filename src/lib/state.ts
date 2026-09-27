@@ -76,6 +76,7 @@ export function createInitialState(): DashboardState {
   return {
     version: 3,
     goals: [move],
+    notes: [],
     settings: { ...defaultSettings },
     activeTimer: null,
     sentTaskReminders: [],
@@ -144,7 +145,15 @@ export function normalizeDashboardState(stored: DashboardState): DashboardState 
       completedDates: task.completedDates ?? [],
       updatedAt: task.updatedAt ?? task.createdAt ?? now
     })),
-    goals: (stored.goals ?? []).map((goal) => normalizeGoal(goal, now))
+    goals: (stored.goals ?? []).map((goal) => normalizeGoal(goal, now)),
+    notes: (stored.notes ?? []).map((note) => ({
+      ...note,
+      title: note.title ?? '',
+      html: note.html ?? '',
+      pinned: Boolean(note.pinned),
+      createdAt: note.createdAt ?? now,
+      updatedAt: note.updatedAt ?? note.createdAt ?? now
+    }))
   }
 }
 

@@ -1,6 +1,6 @@
 # Dashboard
 
-Dashboard is a calm, always-on-top task panel for macOS and Windows. It combines natural-language capture, a fast event composer, recurring routines, a calendar, focus timers, weekly goals, and optional offline-first sync across computers.
+Dashboard is a calm, always-on-top task panel for macOS and Windows. It combines natural-language capture, a fast event composer, recurring routines, a calendar, focus timers, weekly goals, notes, and optional offline-first sync across computers.
 
 ## Highlights
 
@@ -9,8 +9,9 @@ Dashboard is a calm, always-on-top task panel for macOS and Windows. It combines
 - Timed reminders (at start, 10/30/60 minutes, or a day before) plus due-today and due-tomorrow notices
 - Today view grouped into Scheduled, Anytime, Done, and Coming up, with carried-over tasks marked
 - Weekly goals: pick “3× a week”, check in with one tap, and linked tasks count automatically; streaks track consecutive weeks
+- Notes with text sizes, bold/italic/underline/strikethrough, bulleted, numbered, and checklist items, and pasted or dropped images; search and pin to the top
 - Light, dark, or system theme, with a circular reveal when switching
-- Undo for deletes, keyboard shortcuts (`N`, `/`, `1`–`4`, `Ctrl/⌘ + Z`), and a focus timer with +5 min and Done
+- Undo for deletes, keyboard shortcuts (`N`, `/`, `1`–`5`, `Ctrl/⌘ + Z`), and a focus timer with +5 min and Done
 - Menu bar/system tray support, ghost (see-through) mode, and a global `⌘/Ctrl + Shift + Space` shortcut
 - Local storage that keeps working offline, with optional passwordless account sync across Macs and PCs
 
@@ -43,10 +44,10 @@ npm run build:win
 
 ## Cloud sync setup
 
-Dashboard uses Supabase Auth, Postgres, Realtime, and Row Level Security. The app never includes a secret or service-role key.
+Dashboard uses Supabase Auth, Postgres, Realtime, Storage (for note images), and Row Level Security. The app never includes a secret or service-role key.
 
 1. Create or link a Supabase project.
-2. Apply `supabase/migrations/20260901182804_dashboard_sync.sql` with the Supabase CLI.
+2. Apply the migrations in `supabase/migrations/` with the Supabase CLI (`supabase db push`).
 3. Configure a production SMTP provider and change the Magic Link email template to show `{{ .Token }}` so users receive a six-digit OTP.
 4. Set these build environment variables:
 
@@ -59,7 +60,7 @@ For GitHub Actions, add them as repository secrets named `SUPABASE_URL` and `SUP
 
 ## Privacy
 
-Dashboard stores a local JSON cache in Electron's application-data directory. When sync is enabled and the user signs in, task, goal, and preference records are sent over TLS to the configured Supabase project. Row Level Security restricts every record to its owning account. Focus timers remain device-local.
+Dashboard stores a local JSON cache in Electron's application-data directory. When sync is enabled and the user signs in, task, goal, note, and preference records (and images pasted into notes) are sent over TLS to the configured Supabase project. Row Level Security restricts every record and image to its owning account. Focus timers remain device-local.
 
 ## License
 

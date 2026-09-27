@@ -2365,6 +2365,405 @@ h1 {
   box-shadow: 0 0 0 2px var(--goal-color);
 }
 
+/* ───────────────────────── Notes ───────────────────────── */
+
+.notes-search {
+  height: 36px;
+  margin-bottom: 12px;
+  padding: 0 6px 0 11px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.notes-search:focus-within {
+  box-shadow:
+    var(--shadow-sm),
+    0 0 0 2px color-mix(in srgb, var(--accent-text) 45%, transparent);
+}
+.notes-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+}
+.notes-search input::placeholder {
+  color: var(--dim);
+}
+.notes-search button {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: transparent;
+}
+.notes-search button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.notes-none {
+  padding: 18px 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+.note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.note-card {
+  width: 100%;
+  min-height: 72px;
+  padding: 12px 12px 11px 14px;
+  border: 0;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: background-color 0.15s;
+}
+.note-card:hover {
+  background: color-mix(in srgb, var(--surface) 88%, var(--surface-3));
+}
+.note-card-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.note-card-copy strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.note-pin {
+  flex: none;
+  color: var(--accent-text);
+  fill: currentColor;
+}
+.note-card-preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.note-card small {
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 550;
+}
+.note-thumb {
+  width: 52px;
+  height: 52px;
+  flex: none;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+
+/* Editor */
+
+.note-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.note-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: -4px -6px 10px -8px;
+}
+.note-back {
+  height: 30px;
+  padding: 0 8px 0 4px;
+  gap: 2px;
+  color: var(--text-2);
+}
+.note-edited {
+  flex: 1;
+  color: var(--dim);
+  font-size: 11px;
+  text-align: center;
+}
+.note-bar .icon-button.on {
+  color: var(--accent-text);
+}
+.note-bar .icon-button.on svg {
+  fill: currentColor;
+}
+.note-bar .note-delete:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.note-title {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+.note-title::placeholder {
+  color: var(--dim);
+}
+.note-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1px;
+  margin: 10px -6px 4px;
+  padding: 4px;
+  border-radius: 13px;
+  background: var(--glass);
+  backdrop-filter: blur(18px) saturate(1.6);
+  box-shadow: var(--shadow-sm);
+}
+.note-toolbar-gap {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--border-strong);
+}
+.tool-button {
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--text-2);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+.tool-button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.tool-button.active {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.size-menu {
+  position: relative;
+}
+.size-trigger {
+  min-width: 92px;
+  justify-content: space-between;
+  padding: 0 7px 0 9px;
+}
+.size-trigger.active {
+  color: var(--text);
+  background: var(--hover);
+}
+.size-options {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 170px;
+  padding: 4px;
+  border-radius: 13px;
+  display: flex;
+  flex-direction: column;
+  transform-origin: top left;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.size-options button {
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  background: transparent;
+  line-height: 1.2;
+}
+.size-options button:hover {
+  background: var(--hover);
+}
+.size-options button svg {
+  color: var(--accent-text);
+}
+.size-options .size-h1 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.size-options .size-h2 {
+  font-size: 16px;
+  font-weight: 700;
+}
+.size-options .size-h3 {
+  font-size: 14px;
+  font-weight: 650;
+}
+.size-options .size-p {
+  font-size: 13px;
+}
+
+.note-body {
+  position: relative;
+  flex: 1;
+  min-height: 240px;
+  padding: 10px 2px 24px;
+  outline: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  user-select: text;
+  cursor: text;
+}
+.note-body.is-empty::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  top: 10px;
+  color: var(--dim);
+  pointer-events: none;
+}
+.note-body p,
+.note-body div {
+  margin: 0;
+}
+.note-body h1,
+.note-body h2,
+.note-body h3 {
+  margin: 0.55em 0 0.2em;
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.note-body h1 {
+  font-size: 24px;
+  font-weight: 700;
+}
+.note-body h2 {
+  font-size: 18.5px;
+  font-weight: 700;
+}
+.note-body h3 {
+  font-size: 15.5px;
+  font-weight: 650;
+}
+.note-body > :first-child {
+  margin-top: 0;
+}
+.note-body ul,
+.note-body ol {
+  margin: 0.2em 0;
+  padding-left: 22px;
+  list-style: disc;
+}
+.note-body ol {
+  list-style: decimal;
+}
+.note-body :is(ul, ol) ul {
+  list-style: circle;
+}
+.note-body :is(ul, ol) ol {
+  list-style: lower-alpha;
+}
+.note-body :is(ul, ol) :is(ul, ol) {
+  margin: 0;
+}
+.note-body li {
+  padding-left: 2px;
+}
+.note-body li::marker {
+  color: var(--muted);
+}
+.note-body ul.checklist {
+  padding-left: 26px;
+  list-style: none;
+}
+.note-body ul.checklist > li {
+  position: relative;
+  padding-left: 0;
+  transition: color 0.15s;
+}
+.note-body ul.checklist > li::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 0.28em;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+.note-body ul.checklist > li[data-checked='true'] {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--dim);
+}
+.note-body ul.checklist > li[data-checked='true']::before {
+  border-color: var(--accent-text);
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='%23151a05' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+      center / 12px no-repeat,
+    var(--accent);
+}
+.note-body blockquote {
+  margin: 0.4em 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-2);
+}
+.note-body img {
+  display: block;
+  max-width: 100%;
+  max-height: 520px;
+  margin: 8px 0;
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+.note-body img::selection {
+  background: transparent;
+}
+
 /* ───────────────────────── Settings ───────────────────────── */
 
 .settings-group {

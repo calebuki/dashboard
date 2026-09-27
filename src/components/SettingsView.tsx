@@ -134,13 +134,13 @@ export function SettingsView({
             <dt>
               <kbd>N</kbd>
             </dt>
-            <dd>New task</dd>
+            <dd>New task (new note on Notes)</dd>
             <dt>
               <kbd>/</kbd>
             </dt>
             <dd>Quick add</dd>
             <dt>
-              <kbd>1</kbd>–<kbd>4</kbd>
+              <kbd>1</kbd>–<kbd>5</kbd>
             </dt>
             <dd>Switch tabs</dd>
             <dt>
