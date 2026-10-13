@@ -1,6 +1,6 @@
 # Dashboard
 
-Dashboard is a calm, always-on-top task panel for macOS and Windows. It combines natural-language capture, a fast event composer, recurring routines, a calendar, focus timers, weekly goals, notes, and optional offline-first sync across computers.
+Dashboard is a calm, always-on-top task panel for macOS and Windows. It combines natural-language capture, a fast event composer, recurring routines, a calendar, focus timers, weekly goals, a daily wellbeing log, notes, and optional offline-first sync across computers.
 
 ## Highlights
 
@@ -9,6 +9,7 @@ Dashboard is a calm, always-on-top task panel for macOS and Windows. It combines
 - Timed reminders (at start, 10/30/60 minutes, or a day before) plus due-today and due-tomorrow notices
 - Today view grouped into Scheduled, Anytime, Done, and Coming up, with carried-over tasks marked
 - Weekly goals: pick “3× a week”, check in with one tap, and linked tasks count automatically; streaks track consecutive weeks
+- A daily log for habits (like no TikTok/Reels), sleep, caffeine, gym, and 1–10 scores for clarity, focus, memory, and connection; trends, streaks, and “what seems to help” comparisons after two weeks, a nightly reminder, and fields you can customize
 - Notes with text sizes, bold/italic/underline/strikethrough, bulleted, numbered, and checklist items, and pasted or dropped images; search and pin to the top
 - Light, dark, or system theme, with a circular reveal when switching
 - Undo for deletes, keyboard shortcuts (`N`, `/`, `1`–`5`, `Ctrl/⌘ + Z`), and a focus timer with +5 min and Done
