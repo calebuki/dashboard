@@ -1,9 +1,12 @@
 import type { Goal, Task } from '../types'
 import { addDays, fromDateKey, toDateKey, todayKey } from './date'
 
-/** Every day this goal was acted on: manual check-ins plus linked task completions. */
-export function goalActiveDays(goal: Goal, tasks: Task[]): Set<string> {
-  const days = new Set(goal.checkins)
+/**
+ * Every day this goal was acted on: manual check-ins, linked task completions, and `logDays`
+ * from the daily log (a linked habit or gym session).
+ */
+export function goalActiveDays(goal: Goal, tasks: Task[], logDays: string[] = []): Set<string> {
+  const days = new Set([...goal.checkins, ...logDays])
   for (const task of tasks) {
     if (task.goalId !== goal.id) continue
     task.completedDates.forEach((date) => days.add(date))
@@ -28,12 +31,17 @@ export interface GoalProgress {
   week: { date: string; hit: boolean }[]
   streak: number
   checkedToday: boolean
-  /** Today counts because a linked task was completed, so a manual toggle can't undo it. */
+  /** Today counts because of a linked task or log entry, so a manual toggle can't undo it. */
   lockedToday: boolean
 }
 
-export function goalProgress(goal: Goal, tasks: Task[], today = todayKey()): GoalProgress {
-  const days = goalActiveDays(goal, tasks)
+export function goalProgress(
+  goal: Goal,
+  tasks: Task[],
+  today = todayKey(),
+  logDays: string[] = []
+): GoalProgress {
+  const days = goalActiveDays(goal, tasks, logDays)
   const week = weekDays(today).map((date) => ({ date, hit: days.has(date) }))
   const done = week.filter((day) => day.hit).length
 

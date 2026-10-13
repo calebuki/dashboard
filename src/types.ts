@@ -67,6 +67,68 @@ export interface Note {
   updatedAt: string
 }
 
+/**
+ * One row of the end-of-day log. Habits are yes/no, scores are 1–10 (higher is always better),
+ * numbers are free counts. Sleep, caffeine and gym are built-in sections with their own shape.
+ */
+export type LogFieldKind = 'habit' | 'score' | 'number' | 'sleep' | 'caffeine' | 'gym'
+
+export interface LogField {
+  id: string
+  kind: LogFieldKind
+  label: string
+  emoji: string
+  /** Habit and gym only: doing it also counts as a check-in for this goal. */
+  goalId?: string
+  /** Number only, e.g. "glasses". */
+  unit?: string
+}
+
+export interface LogConfig {
+  fields: LogField[]
+  /** "HH:MM" for a nightly nudge to fill in the log, or null for none. */
+  reminderTime: string | null
+  updatedAt: string
+}
+
+export type GymKind = 'lift' | 'cardio' | 'sport' | 'mobility'
+
+export interface SleepEntry {
+  /** Bedtime the night before this day, "HH:MM". */
+  bedtime?: string
+  /** Wake time on this day, "HH:MM". */
+  wake?: string
+  /** 1–5 */
+  quality?: number
+}
+
+export interface CaffeineEntry {
+  mg: number
+  /** Time of the last caffeine, "HH:MM". */
+  lastAt?: string
+}
+
+export interface GymEntry {
+  rest?: boolean
+  kinds: GymKind[]
+  time?: string
+  minutes?: number
+}
+
+/** One day's log; `id` is the day's date key. */
+export interface DailyLog {
+  id: string
+  checks: Record<string, boolean>
+  scores: Record<string, number>
+  numbers: Record<string, number>
+  sleep?: SleepEntry
+  caffeine?: CaffeineEntry
+  gym?: GymEntry
+  note: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type ThemePreference = 'system' | 'light' | 'dark'
 
 export interface DashboardSettings {
@@ -91,6 +153,8 @@ export interface DashboardState {
   tasks: Task[]
   goals: Goal[]
   notes: Note[]
+  logs: DailyLog[]
+  logConfig: LogConfig
   settings: DashboardSettings
   activeTimer: ActiveTimer | null
   sentTaskReminders: string[]

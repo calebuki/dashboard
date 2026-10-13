@@ -8,6 +8,7 @@ import type {
   TaskDraft
 } from '../types'
 import { addDays, daysBetween, nextDateForRecurrence, todayKey } from './date'
+import { defaultLogConfig, normalizeLog, normalizeLogConfig } from './daily-log'
 
 export function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -77,6 +78,8 @@ export function createInitialState(): DashboardState {
     version: 3,
     goals: [move],
     notes: [],
+    logs: [],
+    logConfig: defaultLogConfig([move]),
     settings: { ...defaultSettings },
     activeTimer: null,
     sentTaskReminders: [],
@@ -134,6 +137,7 @@ function normalizeGoal(goal: Partial<Goal> & { id: string; title: string }, now:
 
 export function normalizeDashboardState(stored: DashboardState): DashboardState {
   const now = new Date().toISOString()
+  const goals = (stored.goals ?? []).map((goal) => normalizeGoal(goal, now))
   return {
     ...stored,
     version: 3,
@@ -145,7 +149,12 @@ export function normalizeDashboardState(stored: DashboardState): DashboardState 
       completedDates: task.completedDates ?? [],
       updatedAt: task.updatedAt ?? task.createdAt ?? now
     })),
-    goals: (stored.goals ?? []).map((goal) => normalizeGoal(goal, now)),
+    goals,
+    logs: (stored.logs ?? [])
+      .filter((log) => typeof log?.id === 'string')
+      .map((log) => normalizeLog(log, now))
+      .sort((a, b) => (a.id < b.id ? -1 : 1)),
+    logConfig: normalizeLogConfig(stored.logConfig, goals),
     notes: (stored.notes ?? []).map((note) => ({
       ...note,
       title: note.title ?? '',

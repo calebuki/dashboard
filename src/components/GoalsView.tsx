@@ -1,10 +1,12 @@
 import { forwardRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Check, Flame, Link2, Pencil, Plus, Trash2, X } from 'lucide-react'
-import type { Goal, GoalColor, GoalDraft, Task } from '../types'
+import type { DailyLog, Goal, GoalColor, GoalDraft, LogConfig, Task } from '../types'
 import { fromDateKey, todayKey } from '../lib/date'
+import { logGoalDays } from '../lib/daily-log'
 import { goalProgress } from '../lib/goals'
 import { goalColors } from '../lib/state'
+import { DailyLogCard } from './DailyLog'
 import { Burst, Chip, RollingNumber, Sheet, spring } from './primitives'
 import { cn } from '@/lib/utils'
 
@@ -26,17 +28,26 @@ export const targetLabel = (n: number) => (n === 7 ? 'Every day' : `${n}× a wee
 export function GoalsView({
   goals,
   tasks,
+  logs,
+  logConfig,
+  logToday,
   onCheckin,
   onCreate,
-  onEdit
+  onEdit,
+  onOpenLog
 }: {
   goals: Goal[]
   tasks: Task[]
+  logs: DailyLog[]
+  logConfig: LogConfig
+  logToday: string
   onCheckin: (goal: Goal, date: string) => void
   onCreate: (draft?: GoalDraft) => void
   onEdit: (goal: Goal) => void
+  onOpenLog: (date: string) => void
 }) {
-  const progress = goals.map((goal) => goalProgress(goal, tasks))
+  const logDays = (goal: Goal) => logGoalDays(logs, logConfig.fields, goal.id)
+  const progress = goals.map((goal) => goalProgress(goal, tasks, undefined, logDays(goal)))
   const onTrack = progress.filter((p) => p.done >= p.target).length
 
   return (
@@ -61,6 +72,8 @@ export function GoalsView({
         </motion.button>
       </header>
 
+      <DailyLogCard logs={logs} config={logConfig} today={logToday} onOpen={onOpenLog} />
+
       <div className="goal-list">
         <AnimatePresence initial={false} mode="popLayout">
           {goals.map((goal) => (
@@ -68,6 +81,7 @@ export function GoalsView({
               key={goal.id}
               goal={goal}
               tasks={tasks}
+              logDays={logDays(goal)}
               onCheckin={(date) => onCheckin(goal, date)}
               onEdit={() => onEdit(goal)}
             />
@@ -95,10 +109,10 @@ export function GoalsView({
 
 const GoalCard = forwardRef<
   HTMLElement,
-  { goal: Goal; tasks: Task[]; onCheckin: (date: string) => void; onEdit: () => void }
->(function GoalCard({ goal, tasks, onCheckin, onEdit }, ref) {
+  { goal: Goal; tasks: Task[]; logDays: string[]; onCheckin: (date: string) => void; onEdit: () => void }
+>(function GoalCard({ goal, tasks, logDays, onCheckin, onEdit }, ref) {
   const today = todayKey()
-  const progress = goalProgress(goal, tasks, today)
+  const progress = goalProgress(goal, tasks, today, logDays)
   const linked = tasks.filter((t) => t.goalId === goal.id).length
   const met = progress.done >= progress.target
   const [pop, setPop] = useState(0)
@@ -144,7 +158,7 @@ const GoalCard = forwardRef<
           aria-label={progress.checkedToday ? 'Undo today’s check-in' : 'Check in for today'}
           title={
             progress.lockedToday
-              ? 'Counted from a linked task'
+              ? 'Counted from a linked task or your daily log'
               : progress.checkedToday
                 ? 'Done today — tap to undo'
                 : 'Did it today'
@@ -172,7 +186,7 @@ const GoalCard = forwardRef<
               disabled={future || locked}
               className={cn('goal-day', hit && 'hit', date === today && 'today', future && 'future')}
               onClick={() => onCheckin(date)}
-              title={locked ? 'Counted from a linked task' : undefined}
+              title={locked ? 'Counted from a linked task or your daily log' : undefined}
               aria-label={`${fromDateKey(date).toDateString()}${hit ? ', done' : ''}`}
             >
               <small>{dayLetter.format(fromDateKey(date))}</small>

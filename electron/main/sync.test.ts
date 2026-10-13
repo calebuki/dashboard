@@ -2,7 +2,8 @@ import { mkdtemp, readFile, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { DashboardState, Note, Task } from '../../src/types'
+import type { DailyLog, DashboardState, Note, Task } from '../../src/types'
+import { emptyLog } from '../../src/lib/daily-log'
 import { createInitialState } from '../../src/lib/state'
 
 interface Row {
@@ -208,5 +209,26 @@ describe('DashboardSyncManager', () => {
     expect(await manager.ensureImage(file)).toBe(true)
     expect(await readFile(join(desktop, 'note-images', file), 'utf8')).toBe('image-bytes')
     expect(await manager.ensureImage('../dashboard-state.json')).toBe(false)
+  })
+
+  it('syncs daily logs and a customized log to another computer', async () => {
+    const now = new Date().toISOString()
+    const laptopState = createInitialState()
+    const logs: DailyLog[] = [
+      { ...emptyLog('2026-10-12', now), checks: { 'no-scroll': true }, scores: { clarity: 7 } }
+    ]
+    const logConfig = {
+      ...laptopState.logConfig,
+      fields: [...laptopState.logConfig.fields, { id: 'water', kind: 'number' as const, label: 'Water', emoji: '💧' }],
+      updatedAt: now
+    }
+    await connectedManager({ ...laptopState, logs, logConfig })
+    expect(server.rows.get('log:2026-10-12')?.payload.scores).toEqual({ clarity: 7 })
+    expect(server.rows.has('settings:log')).toBe(true)
+
+    const { remoteStates } = await connectedManager(createInitialState())
+    const synced = remoteStates.at(-1)
+    expect(synced?.logs.map((log) => log.id)).toEqual(['2026-10-12'])
+    expect(synced?.logConfig.fields.map((field) => field.id)).toContain('water')
   })
 })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DashboardState, Task } from '../types'
+import { defaultLogConfig } from './daily-log'
 import { pendingTaskReminders } from './reminders'
 
 const task = (patch: Partial<Task> = {}): Task => ({
@@ -25,6 +26,8 @@ const state = (tasks: Task[], sentTaskReminders: string[] = []): DashboardState 
   tasks,
   goals: [],
   notes: [],
+  logs: [],
+  logConfig: defaultLogConfig(),
   settings: {
     alwaysOnTop: false,
     opacity: 1,

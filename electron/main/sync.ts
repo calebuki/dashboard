@@ -2,12 +2,12 @@ import { safeStorage } from 'electron'
 import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js'
-import type { DashboardState, Goal, Note, SyncStatus, Task } from '../../src/types'
+import type { DailyLog, DashboardState, Goal, LogConfig, Note, SyncStatus, Task } from '../../src/types'
 import { isNoteImageFile, noteImageFiles } from '../../src/lib/notes'
 import { normalizeDashboardState } from '../../src/lib/state'
 import { noteImagePath, noteImageType, readNoteImage, writeNoteImage } from './note-images'
 
-type ItemType = 'task' | 'goal' | 'note' | 'settings'
+type ItemType = 'task' | 'goal' | 'note' | 'log' | 'settings'
 
 const imageBucket = 'note-images'
 
@@ -72,6 +72,8 @@ function stateFingerprint(state: DashboardState): string {
     tasks: state.tasks,
     goals: state.goals,
     notes: state.notes,
+    logs: state.logs,
+    logConfig: state.logConfig,
     settings: state.settings
   })
 }
@@ -363,6 +365,21 @@ export class DashboardSyncManager {
         payload: note as unknown as Record<string, unknown>,
         deleted_at: null
       })),
+      ...state.logs.map((log) => ({
+        user_id: userId,
+        item_type: 'log' as const,
+        item_id: log.id,
+        payload: log as unknown as Record<string, unknown>,
+        deleted_at: null
+      })),
+      // The log's fields and reminder ride along as a second settings row.
+      {
+        user_id: userId,
+        item_type: 'settings' as const,
+        item_id: 'log',
+        payload: state.logConfig as unknown as Record<string, unknown>,
+        deleted_at: null
+      },
       {
         user_id: userId,
         item_type: 'settings' as const,
@@ -456,6 +473,15 @@ export class DashboardSyncManager {
     const remoteNotes = activeRows
       .filter((row) => row.item_type === 'note')
       .map((row) => row.payload as unknown as Note)
+    const remoteLogs = activeRows
+      .filter((row) => row.item_type === 'log')
+      .map((row) => row.payload as unknown as DailyLog)
+    const logConfigRow = activeRows.find(
+      (row) => row.item_type === 'settings' && row.item_id === 'log'
+    )
+    const remoteLogConfig = logConfigRow
+      ? (logConfigRow.payload as unknown as LogConfig)
+      : undefined
     const settingsRow = activeRows.find(
       (row) => row.item_type === 'settings' && row.item_id === 'dashboard'
     )
@@ -463,8 +489,8 @@ export class DashboardSyncManager {
       ? (settingsRow.payload as unknown as DashboardState['settings'])
       : local.settings
 
-    const mergeItems = <T extends Task | Goal | Note>(
-      type: 'task' | 'goal' | 'note',
+    const mergeItems = <T extends Task | Goal | Note | DailyLog>(
+      type: 'task' | 'goal' | 'note' | 'log',
       localItems: T[],
       remoteItems: T[],
       previousServerItems: T[],
@@ -494,12 +520,17 @@ export class DashboardSyncManager {
 
     const localSettingsChanged =
       serverBefore !== null && canonical(local.settings) !== canonical(serverBefore.settings)
+    const localLogConfigChanged =
+      serverBefore !== null && canonical(local.logConfig) !== canonical(serverBefore.logConfig)
     const merged = normalizeDashboardState({
       ...local,
       version: 3,
       tasks: mergeItems('task', local.tasks, remoteTasks, serverBefore?.tasks ?? [], taskFingerprint),
       goals: mergeItems('goal', local.goals, remoteGoals, serverBefore?.goals ?? [], goalFingerprint),
       notes: mergeItems('note', local.notes, remoteNotes, serverBefore?.notes ?? [], (note) => note.id),
+      logs: mergeItems('log', local.logs, remoteLogs, serverBefore?.logs ?? [], (log) => log.id),
+      logConfig:
+        remoteLogConfig && !localLogConfigChanged ? remoteLogConfig : local.logConfig,
       settings: localSettingsChanged ? local.settings : remoteSettings
     })
 
@@ -509,6 +540,9 @@ export class DashboardSyncManager {
       tasks: remoteTasks,
       goals: remoteGoals,
       notes: remoteNotes,
+      logs: remoteLogs,
+      // Without a server copy this falls back to the defaults, so a customized one uploads.
+      logConfig: remoteLogConfig as LogConfig,
       settings: remoteSettings
     })
     this.lastPushedFingerprint = stateFingerprint(this.lastSnapshot)

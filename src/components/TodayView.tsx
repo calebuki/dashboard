@@ -4,6 +4,7 @@ import { ArrowUpRight, ChevronDown, CornerDownLeft, SlidersHorizontal, Sparkles,
 import type { Category, DashboardState, Goal, SyncStatus, Task } from '../types'
 import { addDays, formatLongDate, todayKey } from '../lib/date'
 import { durationLabel, greeting, relativeDayLabel, timeLabel } from '../lib/format'
+import { logGoalDays } from '../lib/daily-log'
 import { goalProgress } from '../lib/goals'
 import { parseQuickTask } from '../lib/quick-add'
 import { taskIsCompleteOn, taskMatchesDate } from '../lib/state'
@@ -171,7 +172,13 @@ export function TodayView({
       </AnimatePresence>
 
       {state.goals.length > 0 && (
-        <GoalStrip goals={state.goals} tasks={state.tasks} onCheckin={onCheckin} onOpen={onGoals} />
+        <GoalStrip
+          goals={state.goals}
+          tasks={state.tasks}
+          logDays={(goal) => logGoalDays(state.logs, state.logConfig.fields, goal.id)}
+          onCheckin={onCheckin}
+          onOpen={onGoals}
+        />
       )}
 
       <FilterBar value={filter} onChange={onFilter} />
@@ -396,11 +403,13 @@ function QuickAdd({
 function GoalStrip({
   goals,
   tasks,
+  logDays,
   onCheckin,
   onOpen
 }: {
   goals: Goal[]
   tasks: Task[]
+  logDays: (goal: Goal) => string[]
   onCheckin: (goal: Goal) => void
   onOpen: () => void
 }) {
@@ -414,15 +423,31 @@ function GoalStrip({
       </div>
       <div className="goal-strip-row">
         {goals.map((goal) => (
-          <GoalPill key={goal.id} goal={goal} tasks={tasks} onCheckin={() => onCheckin(goal)} />
+          <GoalPill
+            key={goal.id}
+            goal={goal}
+            tasks={tasks}
+            logDays={logDays(goal)}
+            onCheckin={() => onCheckin(goal)}
+          />
         ))}
       </div>
     </div>
   )
 }
 
-function GoalPill({ goal, tasks, onCheckin }: { goal: Goal; tasks: Task[]; onCheckin: () => void }) {
-  const progress = goalProgress(goal, tasks)
+function GoalPill({
+  goal,
+  tasks,
+  logDays,
+  onCheckin
+}: {
+  goal: Goal
+  tasks: Task[]
+  logDays: string[]
+  onCheckin: () => void
+}) {
+  const progress = goalProgress(goal, tasks, undefined, logDays)
   const [pop, setPop] = useState(0)
   return (
     <motion.button
@@ -436,7 +461,7 @@ function GoalPill({ goal, tasks, onCheckin }: { goal: Goal; tasks: Task[]; onChe
       }}
       title={
         progress.lockedToday
-          ? 'Counted today from a linked task'
+          ? 'Counted today from a linked task or your daily log'
           : progress.checkedToday
             ? 'Checked in today — tap to undo'
             : 'Tap to check in for today'

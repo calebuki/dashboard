@@ -4,18 +4,21 @@ import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'motion/
 import { LoaderCircle } from 'lucide-react'
 import type {
   ActiveTimer,
+  DailyLog,
   DashboardSettings,
   DashboardState,
   Goal,
   GoalDraft,
+  LogConfig,
   Note,
   SyncStatus,
   Task,
   TaskDraft,
   ThemePreference
 } from './types'
-import { startOfMonth, todayKey } from './lib/date'
+import { addDays, startOfMonth, todayKey } from './lib/date'
 import { relativeDayLabel, timeLabel } from './lib/format'
+import { logDayKey, pendingLogReminder, updateLog } from './lib/daily-log'
 import { toggleCheckin } from './lib/goals'
 import { createNote, noteDisplayTitle, noteIsEmpty } from './lib/notes'
 import { parseQuickTask } from './lib/quick-add'
@@ -30,6 +33,7 @@ import {
   toggleTaskComplete
 } from './lib/state'
 import { CalendarView } from './components/CalendarView'
+import { DailyLogSheet } from './components/DailyLog'
 import { Composer, blankDraft, type ComposerRequest } from './components/Composer'
 import { FocusTimer } from './components/FocusTimer'
 import { GoalSheet, GoalsView } from './components/GoalsView'
@@ -78,6 +82,7 @@ export default function App() {
   const [composer, setComposer] = useState<ComposerRequest | null>(null)
   const [goalSheet, setGoalSheet] = useState<{ goal?: Goal; draft?: GoalDraft } | null>(null)
   const [openNoteId, setOpenNoteId] = useState<string | null>(null)
+  const [logDate, setLogDate] = useState<string | null>(null)
   const [toast, setToast] = useState<ToastMessage | null>(null)
   const [now, setNow] = useState(Date.now())
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() =>
@@ -88,6 +93,7 @@ export default function App() {
   const remindersInFlight = useRef(new Set<string>())
   const reduceMotion = useReducedMotion()
   const today = todayKey()
+  const logToday = logDayKey(new Date(now))
 
   useEffect(() => {
     document.documentElement.classList.add(`platform-${window.dashboard.platform}`)
@@ -170,7 +176,11 @@ export default function App() {
 
   useEffect(() => {
     if (!state?.settings.notifications) return
-    const reminders = pendingTaskReminders(state, new Date(now)).filter(
+    const logReminder = pendingLogReminder(state, new Date(now))
+    const reminders = [
+      ...pendingTaskReminders(state, new Date(now)),
+      ...(logReminder ? [logReminder] : [])
+    ].filter(
       (reminder) => !remindersInFlight.current.has(reminder.key)
     )
     if (!reminders.length) return
@@ -188,7 +198,14 @@ export default function App() {
           }
         : current
     )
-  }, [now, state?.settings.notifications, state?.tasks, state?.sentTaskReminders])
+  }, [
+    now,
+    state?.settings.notifications,
+    state?.tasks,
+    state?.logs,
+    state?.logConfig.reminderTime,
+    state?.sentTaskReminders
+  ])
 
   const update = useCallback(
     (fn: (current: DashboardState) => DashboardState) =>
@@ -407,6 +424,12 @@ export default function App() {
       goals: current.goals.map((item) => (item.id === goal.id ? toggleCheckin(item, date) : item))
     }))
 
+  const changeLog = (date: string, change: (log: DailyLog) => DailyLog) =>
+    update((current) => ({ ...current, logs: updateLog(current.logs, date, change) }))
+
+  const saveLogConfig = (logConfig: LogConfig) =>
+    update((current) => ({ ...current, logConfig: { ...logConfig, updatedAt: new Date().toISOString() } }))
+
   const saveGoal = (draft: GoalDraft, goalId?: string) => {
     update((current) => ({
       ...current,
@@ -466,7 +489,7 @@ export default function App() {
   }
 
   // Keyboard shortcuts
-  const sheetOpen = Boolean(composer || goalSheet)
+  const sheetOpen = Boolean(composer || goalSheet || logDate)
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && !isTyping(event.target)) {
@@ -571,9 +594,13 @@ export default function App() {
                 <GoalsView
                   goals={state.goals}
                   tasks={state.tasks}
+                  logs={state.logs}
+                  logConfig={state.logConfig}
+                  logToday={logToday}
                   onCheckin={checkin}
                   onCreate={(draft) => setGoalSheet({ draft })}
                   onEdit={(goal) => setGoalSheet({ goal })}
+                  onOpenLog={setLogDate}
                 />
               )}
               {view === 'notes' && (
@@ -642,6 +669,18 @@ export default function App() {
           onClose={() => setGoalSheet(null)}
           onSave={saveGoal}
           onDelete={deleteGoal}
+        />
+        <DailyLogSheet
+          // Only today and yesterday stay editable, even if the sheet was left open overnight.
+          date={logDate && (logDate < addDays(logToday, -1) ? logToday : logDate)}
+          today={logToday}
+          logs={state.logs}
+          config={state.logConfig}
+          goals={state.goals}
+          onDate={setLogDate}
+          onChange={changeLog}
+          onConfig={saveLogConfig}
+          onClose={() => setLogDate(null)}
         />
       </main>
     </MotionConfig>
