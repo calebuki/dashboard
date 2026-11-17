@@ -17,6 +17,10 @@ import { noteImageFileFromUrl, noteImageScheme } from '../../src/lib/notes'
 import { normalizeDashboardState } from '../../src/lib/state'
 import { noteImageType, readNoteImage, saveNoteImage } from './note-images'
 import { DashboardSyncManager } from './sync'
+import trayIcon from '../../build/tray.png?asset'
+import trayIcon2x from '../../build/tray@2x.png?asset'
+import trayTemplateIcon from '../../build/trayTemplate.png?asset'
+import trayTemplateIcon2x from '../../build/trayTemplate@2x.png?asset'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -101,14 +105,14 @@ async function storedTheme(): Promise<ThemePreference> {
 }
 
 function buildTrayImage(): Electron.NativeImage {
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-      <rect width="32" height="32" rx="9" fill="#d7ff64"/>
-      <path d="M9 9h14v3H9zm0 6h10v3H9zm0 6h7v3H9z" fill="#151611"/>
-    </svg>`
-  const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
-  const image = nativeImage.createFromDataURL(dataUrl).resize({ width: 16, height: 16 })
-  if (process.platform === 'darwin') image.setTemplateImage(true)
+  // macOS tints a black template glyph to match the menu bar; elsewhere use the tile.
+  const isMac = process.platform === 'darwin'
+  const image = nativeImage.createFromPath(isMac ? trayTemplateIcon : trayIcon)
+  image.addRepresentation({
+    scaleFactor: 2,
+    buffer: nativeImage.createFromPath(isMac ? trayTemplateIcon2x : trayIcon2x).toPNG()
+  })
+  if (isMac) image.setTemplateImage(true)
   return image
 }
 
