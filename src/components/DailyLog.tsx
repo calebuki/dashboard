@@ -2,6 +2,7 @@ import { useMemo, useState, type PointerEvent, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   Bell,
   Check,
@@ -11,8 +12,7 @@ import {
   Plus,
   Settings2,
   Trash2,
-  TriangleAlert,
-  X
+  TriangleAlert
 } from 'lucide-react'
 import type {
   DailyLog,
@@ -44,7 +44,7 @@ import {
   type SeriesValue
 } from '../lib/daily-log'
 import { createId } from '../lib/state'
-import { Chip, Collapse, Segmented, Sheet, Switch, spring } from './primitives'
+import { Chip, Collapse, Segmented, Sheet, SheetHead, StationLine, StopLine, Switch, arrive } from './primitives'
 import { cn } from '@/lib/utils'
 
 const dayLetter = new Intl.DateTimeFormat('en-US', { weekday: 'narrow' })
@@ -125,66 +125,58 @@ export function DailyLogCard({
   const week = Array.from({ length: 7 }, (_, index) => addDays(today, index - 6))
 
   return (
-    <section className={cn('log-card', done && 'done')} aria-label="Daily log">
+    <section className={cn('log-card', done && 'done')} aria-labelledby="log-card-title">
       <div className="log-card-top">
-        <span className="goal-emoji log-emoji">🧠</span>
-        <div className="goal-card-copy">
-          <strong>Daily log</strong>
-          <small>
+        <div className="log-card-copy">
+          <h2 id="log-card-title">Daily log</h2>
+          <small className="tabular">
             {done
-              ? 'Logged for today'
+              ? 'Logged today'
               : progress.filled
                 ? `${progress.filled} of ${progress.total} filled today`
-                : 'Nothing logged yet today'}
-            {score !== null && <span className="log-score-chip">Brain {oneDecimal(score)}</span>}
+                : 'Not logged today'}
+            {score !== null && <span className="log-score"> · Brain score {oneDecimal(score)}</span>}
           </small>
         </div>
-        <motion.button
-          type="button"
-          className={done ? 'soft-button' : 'primary-button'}
-          onClick={() => onOpen(today)}
-          whileTap={{ scale: 0.95 }}
-        >
+        <button type="button" className={done ? 'soft-button' : 'primary-button'} onClick={() => onOpen(today)}>
           {done ? 'Edit' : progress.filled ? 'Continue' : 'Log today'}
-        </motion.button>
+        </button>
       </div>
 
       {!isLogged(byDate.get(yesterday)) && (
         <button type="button" className="log-nudge" onClick={() => onOpen(yesterday)}>
-          Yesterday is empty — fill it in while you remember
+          <span>Yesterday has no entry</span>
+          <b>
+            Fill it in <ArrowRight size={14} />
+          </b>
         </button>
       )}
 
-      <div className="log-week" aria-label="Last 7 days">
-        {week.map((date) => {
+      <StopLine
+        className="log-week"
+        color="var(--log-color)"
+        label="Last 7 days"
+        onSelect={onOpen}
+        stops={week.map((date) => {
           const logged = isLogged(byDate.get(date))
           const editable = date >= yesterday
-          return (
-            <button
-              type="button"
-              key={date}
-              disabled={!editable}
-              className={cn('goal-day', logged && 'hit', date === today && 'today')}
-              onClick={() => onOpen(date)}
-              aria-label={`${fromDateKey(date).toDateString()}${logged ? ', logged' : ''}`}
-              title={editable ? undefined : 'Only today and yesterday can be edited'}
-            >
-              <small>{dayLetter.format(fromDateKey(date))}</small>
-              <motion.i
-                initial={false}
-                animate={{ scale: logged ? 1 : 0.55 }}
-                transition={{ type: 'spring', stiffness: 500, damping: 22 }}
-              />
-            </button>
-          )
+          return {
+            key: date,
+            on: logged,
+            current: date === today,
+            disabled: !editable,
+            title: editable ? undefined : 'Only today and yesterday can be edited',
+            label: dayLetter.format(fromDateKey(date)),
+            ariaLabel: `${fromDateKey(date).toDateString()}${logged ? ', logged' : ''}`
+          }
         })}
-      </div>
+      />
 
       {streaks.length > 0 && (
         <div className="log-streaks">
           {streaks.map(({ field, streak }) => (
             <span key={field.id} className="streak" title={`Best: ${streak.best} days`}>
-              <Flame size={11} /> {field.emoji} {streak.current}-day streak
+              <Flame size={13} /> {field.label} · {streak.current} {streak.current === 1 ? 'day' : 'days'}
             </span>
           ))}
         </div>
@@ -196,7 +188,7 @@ export function DailyLogCard({
         onClick={() => setTrendsOpen((open) => !open)}
         aria-expanded={trendsOpen}
       >
-        Trends & insights <ChevronDown size={13} />
+        Trends <ChevronDown size={16} />
       </button>
       <Collapse open={trendsOpen}>
         <LogInsights logs={logs} config={config} today={today} />
@@ -232,7 +224,7 @@ function LogInsights({ logs, config, today }: { logs: DailyLog[]; config: LogCon
   return (
     <div className="log-insights">
       <div className="field-row">
-        <span className="field-label">Trends</span>
+        <h3 className="field-label">Last {days} days</h3>
         <Segmented
           size="sm"
           label="Trend range"
@@ -252,7 +244,7 @@ function LogInsights({ logs, config, today }: { logs: DailyLog[]; config: LogCon
 
       {habits.length > 0 && (
         <>
-          <span className="field-label">Streaks</span>
+          <h3 className="field-label">Streaks</h3>
           <div className="streak-list">
             {habits.map((field) => {
               const streak = habitStreak(logs, field.id, today)
@@ -261,9 +253,9 @@ function LogInsights({ logs, config, today }: { logs: DailyLog[]; config: LogCon
                   <span>{field.emoji}</span>
                   <strong>{field.label}</strong>
                   <span className={cn('streak', !streak.current && 'cold')}>
-                    <Flame size={11} /> {streak.current}d
+                    <Flame size={13} /> {streak.current}d
                   </span>
-                  <small>best {streak.best}d</small>
+                  <small className="tabular">best {streak.best}d</small>
                 </div>
               )
             })}
@@ -271,21 +263,18 @@ function LogInsights({ logs, config, today }: { logs: DailyLog[]; config: LogCon
         </>
       )}
 
-      <span className="field-label">What seems to help</span>
+      <h3 className="field-label">What lines up with better days</h3>
       {logged < MIN_DAYS_FOR_INSIGHTS ? (
         <div className="insight-locked">
           <p>
-            Comparisons show up after {MIN_DAYS_FOR_INSIGHTS} logged days. {logged} so far.
+            Shows up after {MIN_DAYS_FOR_INSIGHTS} logged days. {logged} so far.
           </p>
-          <div className="goal-bar" aria-hidden>
-            <span>
-              <motion.i
-                initial={false}
-                animate={{ scaleX: logged / MIN_DAYS_FOR_INSIGHTS }}
-                transition={spring}
-              />
-            </span>
-          </div>
+          <StationLine
+            total={MIN_DAYS_FOR_INSIGHTS}
+            filled={logged}
+            color="var(--log-color)"
+            label={`${logged} of ${MIN_DAYS_FOR_INSIGHTS} days logged`}
+          />
         </div>
       ) : comparisons.length ? (
         <>
@@ -294,10 +283,10 @@ function LogInsights({ logs, config, today }: { logs: DailyLog[]; config: LogCon
               <InsightRow key={item.key} item={item} />
             ))}
           </ul>
-          <p className="insight-footnote">These are patterns, not proof. Other things change from day to day too.</p>
+          <p className="insight-footnote">Patterns, not proof. Other things change from day to day too.</p>
         </>
       ) : (
-        <p className="insight-locked">No clear differences yet. Keep logging and they’ll show up here.</p>
+        <p className="insight-locked">No clear differences yet.</p>
       )}
     </div>
   )
@@ -308,7 +297,9 @@ function InsightRow({ item }: { item: Comparison }) {
   const value = (n: number) => `${oneDecimal(n)}${item.unit}`
   return (
     <li className="insight-row">
-      <span className="insight-emoji">{item.emoji}</span>
+      <span className="insight-emoji" aria-hidden>
+        {item.emoji}
+      </span>
       <div>
         <strong>{item.factor}</strong>
         <span>
@@ -484,12 +475,7 @@ function LogForm({
 
   return (
     <div className="goal-form log-form">
-      <header className="composer-head">
-        <p className="eyebrow">Daily log · {formatShortDate(date)}</p>
-        <button type="button" className="icon-button" onClick={onClose} aria-label="Close">
-          <X size={16} />
-        </button>
-      </header>
+      <SheetHead title={`Daily log · ${formatShortDate(date)}`} onClose={onClose} />
       <Segmented
         className="log-day-switch"
         label="Day"
@@ -512,17 +498,17 @@ function LogForm({
           rows={2}
           value={log?.note ?? ''}
           onChange={(event) => change((current) => ({ ...current, note: event.target.value }))}
-          placeholder="Anything that stood out: stress, food, a bad night…"
+          placeholder="Anything that stood out"
         />
       </section>
 
       <footer className="composer-actions">
         <button type="button" className="ghost-button log-customize" onClick={onCustomize}>
-          <Settings2 size={13} /> Customize
+          <Settings2 size={16} /> Customize
         </button>
-        <motion.button type="button" className="primary-button" onClick={onClose} whileTap={{ scale: 0.97 }}>
+        <button type="button" className="primary-button" onClick={onClose}>
           Done
-        </motion.button>
+        </button>
       </footer>
     </div>
   )
@@ -533,7 +519,9 @@ function FieldBlock({ field, aside, children }: { field: LogField; aside?: React
     <section className="field-block log-field">
       <div className="field-row">
         <span className="field-label">
-          <span className="log-field-emoji">{field.emoji}</span>
+          <span className="log-field-emoji" aria-hidden>
+            {field.emoji}
+          </span>
           {field.label}
         </span>
         {aside}
@@ -576,7 +564,7 @@ function Scale({
   return (
     <div className={cn('log-scale', `n${count}`)} role="radiogroup" aria-label={label}>
       {Array.from({ length: count }, (_, index) => index + 1).map((n) => (
-        <motion.button
+        <button
           type="button"
           role="radio"
           aria-checked={value === n}
@@ -584,10 +572,9 @@ function Scale({
           title={labels?.[n - 1]}
           className={cn(value !== undefined && n <= value && 'filled', value === n && 'active')}
           onClick={() => onChange(value === n ? undefined : n)}
-          whileTap={{ scale: 0.9 }}
         >
           {labels ? labels[n - 1] : n}
-        </motion.button>
+        </button>
       ))}
     </div>
   )
@@ -612,24 +599,23 @@ function FieldInput({
       const streak = habitStreak(logs, field.id, date)
       return (
         <section className="log-habit">
-          <span className="log-field-emoji">{field.emoji}</span>
+          <span className="log-field-emoji" aria-hidden>
+            {field.emoji}
+          </span>
           <div className="goal-card-copy">
             <strong>{field.label}</strong>
-            <small>
-              {streak.current > 0 ? (
+            {streak.current > 0 && (
+              <small>
                 <span className="streak">
-                  <Flame size={11} /> {streak.current}-day streak
+                  <Flame size={13} /> {streak.current}-day streak
                 </span>
-              ) : (
-                'Tap when you kept it today'
-              )}
-            </small>
+              </small>
+            )}
           </div>
-          <motion.button
+          <button
             type="button"
             className={cn('goal-check log-check', done && 'on')}
             onClick={() => onChange((current) => ({ ...current, checks: { ...current.checks, [field.id]: !done } }))}
-            whileTap={{ scale: 0.88 }}
             aria-pressed={done}
             aria-label={field.label}
           >
@@ -637,10 +623,10 @@ function FieldInput({
               className="goal-check-fill"
               initial={false}
               animate={{ scale: done ? 1 : 0 }}
-              transition={{ type: 'spring', stiffness: 500, damping: 24 }}
+              transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
             />
-            <Check size={16} strokeWidth={2.6} />
-          </motion.button>
+            <Check size={16} strokeWidth={2.8} />
+          </button>
         </section>
       )
     }
@@ -742,7 +728,7 @@ function FieldInput({
           )}
           {late && bedtime && (
             <p className="log-warning">
-              <TriangleAlert size={12} /> Within 8 hours of your {tonight ? '' : 'usual '}
+              <TriangleAlert size={14} /> Within 8 hours of your {tonight ? '' : 'usual '}
               {timeLabel(bedtime)} bedtime. Late caffeine can cut into deep sleep.
             </p>
           )}
@@ -816,7 +802,7 @@ function Stepper({
   return (
     <div className="log-stepper">
       <button type="button" onClick={() => onChange(Math.max(0, (value ?? 0) - step))} aria-label={`Less ${label}`}>
-        <Minus size={13} />
+        <Minus size={15} />
       </button>
       <input
         type="number"
@@ -829,7 +815,7 @@ function Stepper({
       />
       {unit && <small>{unit}</small>}
       <button type="button" onClick={() => onChange((value ?? 0) + step)} aria-label={`More ${label}`}>
-        <Plus size={13} />
+        <Plus size={15} />
       </button>
     </div>
   )
@@ -872,12 +858,7 @@ function FieldEditor({
 
   return (
     <div className="goal-form log-form">
-      <header className="composer-head">
-        <p className="eyebrow">Customize daily log</p>
-        <button type="button" className="icon-button" onClick={onClose} aria-label="Close">
-          <X size={16} />
-        </button>
-      </header>
+      <SheetHead title="Customize log" onClose={onClose} />
 
       <section className="field-block">
         <span className="field-label">What you track</span>
@@ -890,7 +871,7 @@ function FieldEditor({
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96 }}
-              transition={spring}
+              transition={arrive}
             >
               <div className="log-edit-main">
                 <input
@@ -913,7 +894,7 @@ function FieldEditor({
                   onClick={() => move(index, -1)}
                   aria-label="Move up"
                 >
-                  <ArrowUp size={12} />
+                  <ArrowUp size={14} />
                 </button>
                 <button
                   type="button"
@@ -922,7 +903,7 @@ function FieldEditor({
                   onClick={() => move(index, 1)}
                   aria-label="Move down"
                 >
-                  <ArrowDown size={12} />
+                  <ArrowDown size={14} />
                 </button>
                 <button
                   type="button"
@@ -930,7 +911,7 @@ function FieldEditor({
                   onClick={() => setFields(fields.filter((item) => item.id !== field.id))}
                   aria-label={`Remove ${field.label}`}
                 >
-                  <Trash2 size={12} />
+                  <Trash2 size={14} />
                 </button>
               </div>
               {(field.kind === 'habit' || field.kind === 'gym') && goals.length > 0 && (
@@ -969,23 +950,23 @@ function FieldEditor({
         <span className="field-label">Add</span>
         <div className="chip-row">
           <Chip onClick={() => add({ kind: 'habit', label: 'New habit', emoji: '✅' })}>
-            <Plus size={12} /> Yes / no
+            <Plus size={14} /> Yes / no
           </Chip>
           <Chip onClick={() => add({ kind: 'score', label: 'New score', emoji: '📈' })}>
-            <Plus size={12} /> 1–10 score
+            <Plus size={14} /> 1–10 score
           </Chip>
           <Chip onClick={() => add({ kind: 'number', label: 'New number', emoji: '🔢' })}>
-            <Plus size={12} /> Number
+            <Plus size={14} /> Number
           </Chip>
           {missingBuiltIns.map((kind) => (
             <Chip key={kind} onClick={() => add(builtInFields[kind])}>
-              <Plus size={12} /> {builtInFields[kind].emoji} {builtInFields[kind].label}
+              <Plus size={14} /> {builtInFields[kind].emoji} {builtInFields[kind].label}
             </Chip>
           ))}
         </div>
         {suggestions.length > 0 && (
           <>
-            <small className="log-sub">Ideas</small>
+            <small className="log-sub">Suggestions</small>
             <div className="chip-row">
               {suggestions.map((item) => (
                 <Chip key={item.label} onClick={() => add(item)}>
@@ -1000,7 +981,7 @@ function FieldEditor({
       <section className="field-block">
         <div className="field-row">
           <span className="field-label">
-            <Bell size={11} /> Nightly reminder
+            <Bell size={14} /> Nightly reminder
           </span>
           <Switch
             label="Nightly reminder"
@@ -1015,16 +996,16 @@ function FieldEditor({
             onChange={(time) => time && save({ reminderTime: time })}
           />
         )}
-        <p className="log-edit-hint">Only sent if that day’s log is still empty.</p>
+        <p className="log-edit-hint">Only sent if that day has no entry yet.</p>
       </section>
 
       <footer className="composer-actions">
         <button type="button" className="ghost-button" onClick={onBack}>
           Back to log
         </button>
-        <motion.button type="button" className="primary-button" onClick={onClose} whileTap={{ scale: 0.97 }}>
+        <button type="button" className="primary-button" onClick={onClose}>
           Done
-        </motion.button>
+        </button>
       </footer>
     </div>
   )

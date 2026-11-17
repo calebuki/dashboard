@@ -1,13 +1,13 @@
-import { forwardRef, useState } from 'react'
+import { Fragment, forwardRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Check, Flame, Link2, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Check, Flame, Pencil, Plus, Trash2 } from 'lucide-react'
 import type { DailyLog, Goal, GoalColor, GoalDraft, LogConfig, Task } from '../types'
 import { fromDateKey, todayKey } from '../lib/date'
 import { logGoalDays } from '../lib/daily-log'
 import { goalProgress } from '../lib/goals'
 import { goalColors } from '../lib/state'
 import { DailyLogCard } from './DailyLog'
-import { Burst, Chip, RollingNumber, Sheet, spring } from './primitives'
+import { Chip, EmptyNote, Sheet, SheetHead, StopLine, arrive, spring } from './primitives'
 import { cn } from '@/lib/utils'
 
 const dayLetter = new Intl.DateTimeFormat('en-US', { weekday: 'narrow' })
@@ -24,6 +24,15 @@ const suggestions: GoalDraft[] = [
 const emojis = ['🎯', '🏃', '💪', '📚', '🧘', '🗣️', '🎸', '🎨', '✍️', '💧', '🥗', '😴', '📞', '🧹', '💰', '🌱', '🍳', '🧠']
 
 export const targetLabel = (n: number) => (n === 7 ? 'Every day' : `${n}× a week`)
+
+const colorNames: Record<GoalColor, string> = {
+  lime: 'Green',
+  sky: 'Blue',
+  violet: 'Purple',
+  coral: 'Red',
+  amber: 'Orange',
+  mint: 'Sky'
+}
 
 export function GoalsView({
   goals,
@@ -49,60 +58,66 @@ export function GoalsView({
   const logDays = (goal: Goal) => logGoalDays(logs, logConfig.fields, goal.id)
   const progress = goals.map((goal) => goalProgress(goal, tasks, undefined, logDays(goal)))
   const onTrack = progress.filter((p) => p.done >= p.target).length
+  const ideas = suggestions.filter((s) => !goals.some((g) => g.title.toLowerCase() === s.title.toLowerCase()))
 
   return (
     <section className="view goals-view">
-      <header className="view-head">
+      <header className="view-head with-action">
         <div>
-          <p className="eyebrow">Weekly rhythms</p>
           <h1>Goals</h1>
-          <p className="view-sub">
-            {goals.length
-              ? `${onTrack} of ${goals.length} hit this week. Linked tasks count automatically.`
-              : 'Pick a few things you want to do regularly. Check in when you do them.'}
-          </p>
+          {goals.length > 0 && (
+            <p className="view-meta tabular">
+              {onTrack} of {goals.length} met this week
+            </p>
+          )}
         </div>
-        <motion.button
-          type="button"
-          className="soft-button"
-          onClick={() => onCreate()}
-          whileTap={{ scale: 0.95 }}
-        >
-          <Plus size={14} /> New
-        </motion.button>
+        <button type="button" className="soft-button" onClick={() => onCreate()}>
+          <Plus size={16} /> New goal
+        </button>
       </header>
 
       <DailyLogCard logs={logs} config={logConfig} today={logToday} onOpen={onOpenLog} />
 
-      <div className="goal-list">
-        <AnimatePresence initial={false} mode="popLayout">
-          {goals.map((goal) => (
-            <GoalCard
-              key={goal.id}
-              goal={goal}
-              tasks={tasks}
-              logDays={logDays(goal)}
-              onCheckin={(date) => onCheckin(goal, date)}
-              onEdit={() => onEdit(goal)}
-            />
-          ))}
-        </AnimatePresence>
-      </div>
+      <section className="page-section" aria-labelledby="goals-week">
+        <h2 className="section-title" id="goals-week">
+          This week
+        </h2>
+        {goals.length ? (
+          <div className="goal-list">
+            <AnimatePresence initial={false} mode="popLayout">
+              {goals.map((goal) => (
+                <GoalCard
+                  key={goal.id}
+                  goal={goal}
+                  tasks={tasks}
+                  logDays={logDays(goal)}
+                  onCheckin={(date) => onCheckin(goal, date)}
+                  onEdit={() => onEdit(goal)}
+                />
+              ))}
+            </AnimatePresence>
+          </div>
+        ) : (
+          <EmptyNote>No goals yet. Pick a suggestion below or make your own.</EmptyNote>
+        )}
+      </section>
 
-      <div className="goal-suggestions">
-        <span className="field-label">{goals.length ? 'Ideas' : 'Start with one'}</span>
-        <div className="chip-row">
-          {suggestions
-            .filter((s) => !goals.some((g) => g.title.toLowerCase() === s.title.toLowerCase()))
-            .map((s) => (
+      {ideas.length > 0 && (
+        <section className="page-section goal-suggestions" aria-labelledby="goal-ideas">
+          <h2 className="section-title" id="goal-ideas">
+            Suggestions
+          </h2>
+          <div className="chip-row">
+            {ideas.map((s) => (
               <Chip key={s.title} className={`goal-chip ${s.color}`} onClick={() => onCreate(s)}>
-                <span>{s.emoji}</span>
+                <span aria-hidden>{s.emoji}</span>
                 {s.title}
-                <small>{s.weeklyTarget}×</small>
+                <small>{targetLabel(s.weeklyTarget)}</small>
               </Chip>
             ))}
-        </div>
-      </div>
+          </div>
+        </section>
+      )}
     </section>
   )
 }
@@ -115,12 +130,18 @@ const GoalCard = forwardRef<
   const progress = goalProgress(goal, tasks, today, logDays)
   const linked = tasks.filter((t) => t.goalId === goal.id).length
   const met = progress.done >= progress.target
-  const [pop, setPop] = useState(0)
+  const meta: ReactNode[] = [
+    `${progress.done} of ${progress.target}${met ? ', met' : ''}`,
+    progress.streak > 0 && (
+      <span className="streak" title="Weeks in a row you met this goal">
+        <Flame size={13} /> {progress.streak} wk
+      </span>
+    ),
+    linked > 0 && `${linked} linked ${linked === 1 ? 'task' : 'tasks'}`
+  ].filter(Boolean)
 
   const checkToday = () => {
-    if (progress.lockedToday) return
-    if (!progress.checkedToday) setPop((n) => n + 1)
-    onCheckin(today)
+    if (!progress.lockedToday) onCheckin(today)
   }
 
   return (
@@ -128,95 +149,73 @@ const GoalCard = forwardRef<
       ref={ref}
       layout
       className={cn('goal-card', goal.color, met && 'met')}
-      initial={{ opacity: 0, y: 12, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={spring}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, transition: { duration: 0.14 } }}
+      transition={arrive}
     >
       <div className="goal-card-top">
-        <span className="goal-emoji">{goal.emoji}</span>
+        <span className="goal-emoji" aria-hidden>
+          {goal.emoji}
+        </span>
         <div className="goal-card-copy">
           <strong>{goal.title}</strong>
-          <small>
-            <RollingNumber value={progress.done} /> of {progress.target} this week
-            {progress.streak > 0 && (
-              <span className="streak">
-                <Flame size={11} /> {progress.streak} wk
-              </span>
-            )}
+          <small className="tabular">
+            {meta.map((part, index) => (
+              <Fragment key={index}>
+                {index > 0 && ' · '}
+                {part}
+              </Fragment>
+            ))}
           </small>
         </div>
-        <button type="button" className="icon-button subtle" onClick={onEdit} aria-label={`Edit ${goal.title}`}>
-          <Pencil size={13} />
+        <button type="button" className="icon-button subtle" onClick={onEdit} aria-label={`Edit ${goal.title}`} title="Edit">
+          <Pencil size={15} />
         </button>
-        <motion.button
+        <button
           type="button"
           className={cn('goal-check', progress.checkedToday && 'on')}
           onClick={checkToday}
-          whileTap={{ scale: 0.88 }}
           aria-pressed={progress.checkedToday}
-          aria-label={progress.checkedToday ? 'Undo today’s check-in' : 'Check in for today'}
+          aria-label={progress.checkedToday ? 'Undo today' : 'Done today'}
           title={
             progress.lockedToday
               ? 'Counted from a linked task or your daily log'
               : progress.checkedToday
-                ? 'Done today — tap to undo'
-                : 'Did it today'
+                ? 'Done today. Click to undo.'
+                : 'Done today'
           }
         >
           <motion.span
             className="goal-check-fill"
             initial={false}
             animate={{ scale: progress.checkedToday ? 1 : 0 }}
-            transition={{ type: 'spring', stiffness: 500, damping: 24 }}
+            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
           />
-          <Check size={18} strokeWidth={2.6} />
-          <Burst key={pop} show={pop > 0} color={`var(--goal-${goal.color})`} />
-        </motion.button>
+          <Check size={18} strokeWidth={2.8} />
+        </button>
       </div>
 
-      <div className="goal-week">
-        {progress.week.map(({ date, hit }) => {
+      <StopLine
+        className="goal-week"
+        color={`var(--goal-${goal.color})`}
+        label={`${goal.title} this week`}
+        onSelect={onCheckin}
+        stops={progress.week.map(({ date, hit }) => {
           const future = date > today
           const locked = hit && !goal.checkins.includes(date)
-          return (
-            <button
-              type="button"
-              key={date}
-              disabled={future || locked}
-              className={cn('goal-day', hit && 'hit', date === today && 'today', future && 'future')}
-              onClick={() => onCheckin(date)}
-              title={locked ? 'Counted from a linked task or your daily log' : undefined}
-              aria-label={`${fromDateKey(date).toDateString()}${hit ? ', done' : ''}`}
-            >
-              <small>{dayLetter.format(fromDateKey(date))}</small>
-              <motion.i
-                initial={false}
-                animate={{ scale: hit ? 1 : 0.55 }}
-                transition={{ type: 'spring', stiffness: 500, damping: 22 }}
-              />
-            </button>
-          )
+          return {
+            key: date,
+            on: hit,
+            current: date === today,
+            dim: future,
+            disabled: future || locked,
+            title: locked ? 'Counted from a linked task or your daily log' : undefined,
+            label: dayLetter.format(fromDateKey(date)),
+            ariaLabel: `${fromDateKey(date).toDateString()}${hit ? ', done' : ''}`
+          }
         })}
-      </div>
-
-      <div className="goal-bar" aria-hidden>
-        {Array.from({ length: progress.target }, (_, i) => (
-          <span key={i}>
-            <motion.i
-              initial={false}
-              animate={{ scaleX: i < progress.done ? 1 : 0 }}
-              transition={{ ...spring, delay: i * 0.04 }}
-            />
-          </span>
-        ))}
-      </div>
-
-      {linked > 0 && (
-        <p className="goal-linked">
-          <Link2 size={11} /> {linked} linked {linked === 1 ? 'task' : 'tasks'}
-        </p>
-      )}
+      />
     </motion.article>
   )
 })
@@ -281,28 +280,18 @@ function GoalForm({
         if (canSave) onSave(draft, goal?.id)
       }}
     >
-      <header className="composer-head">
-        <p className="eyebrow">{goal ? 'Edit goal' : 'New goal'}</p>
-        <button type="button" className="icon-button" onClick={onClose} aria-label="Close">
-          <X size={16} />
-        </button>
-      </header>
+      <SheetHead title={goal ? 'Edit goal' : 'New goal'} onClose={onClose} />
 
       <div className={cn('goal-preview', draft.color)}>
-        <motion.span
-          key={draft.emoji}
-          className="goal-emoji large"
-          initial={{ scale: 0.6, rotate: -12 }}
-          animate={{ scale: 1, rotate: 0 }}
-          transition={{ type: 'spring', stiffness: 500, damping: 18 }}
-        >
+        <span className="goal-emoji large" aria-hidden>
           {draft.emoji}
-        </motion.span>
+        </span>
         <input
+          className="field-input"
           autoFocus
           value={draft.title}
           onChange={(event) => patch({ title: event.target.value })}
-          placeholder="What do you want to do regularly?"
+          placeholder="Goal name, like “Read”"
           aria-label="Goal name"
         />
       </div>
@@ -310,34 +299,31 @@ function GoalForm({
       <section className="field-block">
         <div className="field-row">
           <span className="field-label">How often</span>
-          <AnimatePresence mode="popLayout" initial={false}>
-            <motion.strong
-              key={draft.weeklyTarget}
-              className="target-label"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={spring}
-            >
-              {targetLabel(draft.weeklyTarget)}
-            </motion.strong>
-          </AnimatePresence>
+          <strong className="target-label">{targetLabel(draft.weeklyTarget)}</strong>
         </div>
-        <div className={cn('target-picker', draft.color)} role="radiogroup" aria-label="Times per week">
+        <div
+          className="stop-line target-picker"
+          style={{ '--route': `var(--goal-${draft.color})` } as React.CSSProperties}
+          role="radiogroup"
+          aria-label="Times per week"
+        >
           {Array.from({ length: 7 }, (_, i) => i + 1).map((n) => (
             <button
               type="button"
               role="radio"
               aria-checked={draft.weeklyTarget === n}
+              aria-label={targetLabel(n)}
               key={n}
-              className={cn(n <= draft.weeklyTarget && 'filled', n === draft.weeklyTarget && 'active')}
+              className={cn(
+                'stop',
+                n <= draft.weeklyTarget && 'on',
+                n > 1 && n <= draft.weeklyTarget && 'join-prev',
+                n < draft.weeklyTarget && 'join-next',
+                n === draft.weeklyTarget && 'current'
+              )}
               onClick={() => patch({ weeklyTarget: n })}
             >
-              <motion.i
-                initial={false}
-                animate={{ scale: n <= draft.weeklyTarget ? 1 : 0.4 }}
-                transition={{ type: 'spring', stiffness: 520, damping: 24, delay: n * 0.015 }}
-              />
+              <i />
               <small>{n}</small>
             </button>
           ))}
@@ -348,16 +334,15 @@ function GoalForm({
         <span className="field-label">Icon</span>
         <div className="emoji-grid">
           {emojis.map((emoji) => (
-            <motion.button
+            <button
               type="button"
               key={emoji}
+              aria-pressed={draft.emoji === emoji}
               className={cn(draft.emoji === emoji && 'active')}
               onClick={() => patch({ emoji })}
-              whileTap={{ scale: 0.85 }}
-              whileHover={{ scale: 1.12 }}
             >
               {emoji}
-            </motion.button>
+            </button>
           ))}
         </div>
       </section>
@@ -371,7 +356,9 @@ function GoalForm({
               key={color}
               className={cn('swatch', color, draft.color === color && 'active')}
               onClick={() => patch({ color })}
-              aria-label={color}
+              aria-label={colorNames[color]}
+              aria-pressed={draft.color === color}
+              title={colorNames[color]}
             >
               {draft.color === color && (
                 <motion.span className="swatch-ring" layoutId="swatch-ring" transition={spring} />
@@ -387,17 +374,18 @@ function GoalForm({
             type="button"
             className="icon-button danger"
             aria-label="Delete goal"
+            title="Delete goal"
             onClick={() => onDelete(goal.id)}
           >
-            <Trash2 size={15} />
+            <Trash2 size={16} />
           </button>
         )}
         <button type="button" className="ghost-button" onClick={onClose}>
           Cancel
         </button>
-        <motion.button type="submit" className="primary-button" disabled={!canSave} whileTap={{ scale: 0.97 }}>
+        <button type="submit" className="primary-button" disabled={!canSave}>
           {goal ? 'Save' : 'Add goal'}
-        </motion.button>
+        </button>
       </footer>
     </form>
   )

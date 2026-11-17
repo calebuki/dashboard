@@ -14,8 +14,8 @@ import {
 } from '../lib/date'
 import { durationLabel, relativeDayLabel } from '../lib/format'
 import { taskIsCompleteOn, taskMatchesDate } from '../lib/state'
-import { spring } from './primitives'
-import { Empty, FilterBar, type Filter, type TaskHandlers } from './TodayView'
+import { EmptyNote, arrive, spring } from './primitives'
+import { FilterBar, type Filter, type TaskHandlers } from './TodayView'
 import { TaskItem } from './TaskItem'
 import { cn } from '@/lib/utils'
 
@@ -81,39 +81,37 @@ export function CalendarView({
   return (
     <section className="view calendar-view">
       <header className="view-head calendar-head">
-        <div>
-          <p className="eyebrow">{year}</p>
-          <div className="month-title">
-            <AnimatePresence mode="popLayout" initial={false} custom={direction}>
-              <motion.h1
-                key={month}
-                initial={{ y: direction * 24, opacity: 0, filter: 'blur(4px)' }}
-                animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
-                exit={{ y: direction * -24, opacity: 0, filter: 'blur(4px)' }}
-                transition={spring}
-              >
-                {monthName.format(fromDateKey(month))}
-              </motion.h1>
-            </AnimatePresence>
-          </div>
+        <div className="month-title">
+          <AnimatePresence mode="popLayout" initial={false} custom={direction}>
+            <motion.h1
+              key={month}
+              initial={{ y: direction * 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: direction * -20, opacity: 0 }}
+              transition={arrive}
+            >
+              {monthName.format(fromDateKey(month))} <span className="month-year">{year}</span>
+            </motion.h1>
+          </AnimatePresence>
         </div>
         <div className="month-controls">
           {(!isSameMonth(month, today) || selected !== today) && (
             <motion.button
               type="button"
-              className="today-button"
+              className="soft-button sm"
               onClick={jumpToday}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={arrive}
             >
               Today
             </motion.button>
           )}
-          <button type="button" className="icon-button" onClick={() => go(-1)} aria-label="Previous month">
-            <ChevronLeft size={16} />
+          <button type="button" className="icon-button outline" onClick={() => go(-1)} aria-label="Previous month">
+            <ChevronLeft size={18} />
           </button>
-          <button type="button" className="icon-button" onClick={() => go(1)} aria-label="Next month">
-            <ChevronRight size={16} />
+          <button type="button" className="icon-button outline" onClick={() => go(1)} aria-label="Next month">
+            <ChevronRight size={18} />
           </button>
         </div>
       </header>
@@ -140,10 +138,10 @@ export function CalendarView({
             <motion.div
               key={month}
               className="calendar-grid"
-              initial={{ x: `${direction * 30}%`, opacity: 0 }}
+              initial={{ x: `${direction * 24}%`, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
-              exit={{ x: `${direction * -30}%`, opacity: 0 }}
-              transition={spring}
+              exit={{ x: `${direction * -24}%`, opacity: 0 }}
+              transition={arrive}
             >
               {calendarDays(month).map((date) => {
                 const dayTasks = filtered.filter((t) => taskMatchesDate(t, date))
@@ -189,24 +187,16 @@ export function CalendarView({
 
       <div className="agenda-head">
         <div>
-          <AnimatePresence mode="popLayout" initial={false}>
-            <motion.strong
-              key={selected}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={spring}
-            >
-              {agendaTitle(selected)}
-            </motion.strong>
-          </AnimatePresence>
-          <small>
-            {agenda.length ? `${agenda.length} tasks · ${durationLabel(agendaMinutes)} left` : 'Free day'}
+          <h2>{agendaTitle(selected)}</h2>
+          <small className="tabular">
+            {agenda.length
+              ? `${agenda.length} ${agenda.length === 1 ? 'task' : 'tasks'} · ${durationLabel(agendaMinutes)} left`
+              : 'Nothing planned'}
           </small>
         </div>
-        <motion.button type="button" className="soft-button" onClick={onAdd} whileTap={{ scale: 0.95 }}>
-          <Plus size={14} /> Add
-        </motion.button>
+        <button type="button" className="soft-button sm" onClick={onAdd}>
+          <Plus size={16} /> Add
+        </button>
       </div>
 
       <div className="task-list">
@@ -224,7 +214,7 @@ export function CalendarView({
             />
           ))}
         </AnimatePresence>
-        {!agenda.length && <Empty title="Open day" body="Double-click any day to plan something." />}
+        {!agenda.length && <EmptyNote>Nothing on this day. Double-click a date to add a task.</EmptyNote>}
       </div>
     </section>
   )

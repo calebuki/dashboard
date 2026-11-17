@@ -49,11 +49,3 @@ export function countdown(seconds: number): string {
   const safe = Math.max(0, seconds)
   return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`
 }
-
-export function greeting(date = new Date()): string {
-  const hour = date.getHours()
-  if (hour < 5) return 'Still up'
-  if (hour < 12) return 'Good morning'
-  if (hour < 17) return 'Good afternoon'
-  return 'Good evening'
-}

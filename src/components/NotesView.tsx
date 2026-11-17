@@ -42,7 +42,7 @@ import {
   searchNotes,
   sortNotes
 } from '../lib/notes'
-import { spring } from './primitives'
+import { EmptyNote, arrive, easeOut } from './primitives'
 import { cn } from '@/lib/utils'
 
 export function NotesView({
@@ -75,10 +75,10 @@ export function NotesView({
         <motion.section
           key="editor"
           className="view note-editor-view"
-          initial={{ opacity: 0, x: 24 }}
+          initial={{ opacity: 0, x: 16 }}
           animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: 24, transition: { duration: 0.12 } }}
-          transition={spring}
+          exit={{ opacity: 0, x: 16, transition: { duration: 0.12 } }}
+          transition={arrive}
         >
           <NoteEditor
             key={open.id}
@@ -93,10 +93,10 @@ export function NotesView({
       ) : (
         <motion.div
           key="list"
-          initial={{ opacity: 0, x: -24 }}
+          initial={{ opacity: 0, x: -16 }}
           animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -24, transition: { duration: 0.12 } }}
-          transition={spring}
+          exit={{ opacity: 0, x: -16, transition: { duration: 0.12 } }}
+          transition={arrive}
         >
           <NoteList notes={notes} synced={synced} now={now} onOpen={onOpen} onCreate={onCreate} />
         </motion.div>
@@ -124,24 +124,23 @@ function NoteList({
 
   return (
     <section className="view notes-view">
-      <header className="view-head">
+      <header className="view-head with-action">
         <div>
-          <p className="eyebrow">Jot it down</p>
           <h1>Notes</h1>
-          <p className="view-sub">
-            {notes.length
-              ? `${count} · ${synced ? 'synced across your computers' : 'saved on this computer'}`
-              : 'Ideas, lists, and screenshots — all in one place.'}
-          </p>
+          {notes.length > 0 && (
+            <p className="view-meta tabular">
+              {count} · {synced ? 'synced' : 'on this computer'}
+            </p>
+          )}
         </div>
-        <motion.button type="button" className="soft-button" onClick={onCreate} whileTap={{ scale: 0.95 }}>
-          <Plus size={14} /> New
-        </motion.button>
+        <button type="button" className="soft-button" onClick={onCreate}>
+          <Plus size={16} /> New note
+        </button>
       </header>
 
       {notes.length > 0 && (
         <label className="notes-search">
-          <Search size={14} />
+          <Search size={17} />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -150,26 +149,18 @@ function NoteList({
           />
           {query && (
             <button type="button" onClick={() => setQuery('')} aria-label="Clear search">
-              <X size={13} />
+              <X size={15} />
             </button>
           )}
         </label>
       )}
 
       {notes.length === 0 ? (
-        <div className="empty">
-          <div className="empty-art" aria-hidden>
-            <i />
-            <i />
-            <i />
-          </div>
-          <strong>No notes yet</strong>
-          <span>
-            Write things down, make a checklist, or paste a screenshot. Press <kbd>N</kbd> to start one.
-          </span>
-        </div>
+        <EmptyNote>
+          No notes yet. Press <kbd>N</kbd> to start one.
+        </EmptyNote>
       ) : shown.length === 0 ? (
-        <p className="notes-none">Nothing matches “{query.trim()}”.</p>
+        <EmptyNote>Nothing matches “{query.trim()}”.</EmptyNote>
       ) : (
         <div className="note-list">
           <AnimatePresence initial={false} mode="popLayout">
@@ -194,17 +185,17 @@ const NoteCard = forwardRef<HTMLButtonElement, { note: Note; now: number; onOpen
         layout
         className="note-card"
         onClick={onOpen}
-        initial={{ opacity: 0, y: 10, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        transition={spring}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, transition: { duration: 0.14 } }}
+        transition={arrive}
       >
         <span className="note-card-copy">
           <strong>
-            {note.pinned && <Pin size={11} className="note-pin" aria-label="Pinned" />}
-            {noteDisplayTitle(note)}
+            {note.pinned && <Pin size={14} className="note-pin" aria-label="Pinned" />}
+            <span className="note-card-title">{noteDisplayTitle(note)}</span>
           </strong>
-          <span className="note-card-preview">{preview || (image ? 'Image' : 'No additional text')}</span>
+          {(preview || image) && <span className="note-card-preview">{preview || 'Image'}</span>}
           <small>{noteTimeLabel(note.updatedAt, now)}</small>
         </span>
         {image && <img className="note-thumb" src={noteImageUrl(image)} alt="" draggable={false} />}
@@ -502,7 +493,7 @@ function NoteEditor({
     <div className="note-editor">
       <header className="note-bar">
         <button type="button" className="ghost-button note-back" onClick={back}>
-          <ChevronLeft size={15} /> Notes
+          <ChevronLeft size={17} /> Notes
         </button>
         <small className="note-edited">Edited {noteTimeLabel(note.updatedAt, now).toLowerCase()}</small>
         <button
@@ -513,7 +504,7 @@ function NoteEditor({
           title={note.pinned ? 'Unpin' : 'Pin to top'}
           onClick={() => onChange({ pinned: !note.pinned })}
         >
-          <Pin size={14} />
+          <Pin size={16} />
         </button>
         <button
           type="button"
@@ -525,7 +516,7 @@ function NoteEditor({
             onDelete()
           }}
         >
-          <Trash2 size={14} />
+          <Trash2 size={16} />
         </button>
       </header>
 
@@ -573,7 +564,7 @@ function NoteEditor({
           <ListChecks size={15} />
         </ToolButton>
         <span className="note-toolbar-gap" />
-        <ToolButton label="Add image (or paste one)" onClick={() => fileInput.current?.click()}>
+        <ToolButton label="Add image" onClick={() => fileInput.current?.click()}>
           <ImagePlus size={15} />
         </ToolButton>
         <input
@@ -598,7 +589,7 @@ function NoteEditor({
         role="textbox"
         aria-multiline="true"
         aria-label="Note"
-        data-placeholder="Start writing, or paste an image…"
+        data-placeholder="Start writing"
         spellCheck
         onInput={onInput}
         onPaste={onPaste}
@@ -672,17 +663,17 @@ function SizeMenu({ value, onChange }: { value: Block; onChange: (block: Block) 
         onClick={() => setOpen((v) => !v)}
       >
         {current.label}
-        <ChevronDown size={12} />
+        <ChevronDown size={14} />
       </button>
       <AnimatePresence>
         {open && (
           <motion.div
             role="menu"
             className="size-options"
-            initial={{ opacity: 0, y: -4, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.97, transition: { duration: 0.1 } }}
-            transition={spring}
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.1 } }}
+            transition={{ duration: 0.18, ease: easeOut }}
           >
             {sizes.map((size) => (
               <button
@@ -697,7 +688,7 @@ function SizeMenu({ value, onChange }: { value: Block; onChange: (block: Block) 
                 }}
               >
                 {size.label}
-                {size.value === value && <Check size={13} />}
+                {size.value === value && <Check size={15} />}
               </button>
             ))}
           </motion.div>

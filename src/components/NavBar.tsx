@@ -1,6 +1,6 @@
 import { motion } from 'motion/react'
 import { CalendarDays, NotebookPen, Plus, Settings, Sun, Target } from 'lucide-react'
-import { spring } from './primitives'
+import { easeOut, spring } from './primitives'
 import { cn } from '@/lib/utils'
 
 export type View = 'today' | 'calendar' | 'goals' | 'notes' | 'settings'
@@ -27,7 +27,7 @@ export function NavBar({
   return (
     <div className="nav-dock">
       <nav className="nav" aria-label="Dashboard views">
-        {views.map(({ value: item, label, icon: Icon }) => {
+        {views.map(({ value: item, label, icon: Icon }, index) => {
           const active = item === value
           return (
             <button
@@ -36,14 +36,15 @@ export function NavBar({
               className={cn(active && 'active')}
               aria-current={active ? 'page' : undefined}
               aria-label={label}
+              title={`${label} (${index + 1})`}
               onClick={() => onChange(item)}
             >
               {active && <motion.span className="nav-pill" layoutId="nav-pill" transition={spring} />}
-              <Icon size={16} />
+              <Icon size={17} />
               <motion.small
                 initial={false}
                 animate={{ width: active ? 'auto' : 0, opacity: active ? 1 : 0 }}
-                transition={spring}
+                transition={{ duration: 0.24, ease: easeOut }}
               >
                 {label}
               </motion.small>
@@ -51,18 +52,9 @@ export function NavBar({
           )
         })}
       </nav>
-      <motion.button
-        type="button"
-        className="nav-add"
-        aria-label={addLabel}
-        title={`${addLabel} (N)`}
-        onClick={onAdd}
-        whileHover={{ rotate: 90 }}
-        whileTap={{ scale: 0.9 }}
-        transition={spring}
-      >
-        <Plus size={20} />
-      </motion.button>
+      <button type="button" className="nav-add" aria-label={addLabel} title={`${addLabel} (N)`} onClick={onAdd}>
+        <Plus size={22} strokeWidth={2.4} />
+      </button>
     </div>
   )
 }

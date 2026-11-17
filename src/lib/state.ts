@@ -93,7 +93,7 @@ export function createInitialState(): DashboardState {
         priority: 1
       }),
       makeTask({
-        title: 'Plan the three things that matter today',
+        title: 'Standup',
         category: 'work',
         dueDate: today,
         dueTime: '09:00',

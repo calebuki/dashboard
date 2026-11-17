@@ -1,16 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import {
-  Bell,
-  CalendarClock,
-  Minus,
-  Plus,
-  Repeat2,
-  Sparkles,
-  Star,
-  Trash2,
-  X
-} from 'lucide-react'
+import { Bell, Minus, Plus, Repeat2, Star, Trash2 } from 'lucide-react'
 import type { Category, Goal, TaskDraft } from '../types'
 import { formatLongDate, formatShortDate } from '../lib/date'
 import {
@@ -23,7 +13,7 @@ import {
 import { parseQuickTask } from '../lib/quick-add'
 import { areaKeys, areas } from './areas'
 import { DayStrip, MiniCalendar, TimeWheel, nextHalfHour } from './pickers'
-import { Chip, Collapse, Segmented, Sheet, spring } from './primitives'
+import { Chip, Collapse, Segmented, Sheet, SheetHead, arrive, spring } from './primitives'
 import { cn } from '@/lib/utils'
 
 const durations = [15, 30, 45, 60, 90, 120]
@@ -171,16 +161,12 @@ function ComposerForm({
         }
       }}
     >
-      <header className="composer-head">
-        <p className="eyebrow">{editing ? 'Edit task' : 'New task'}</p>
-        <button type="button" className="icon-button" onClick={onClose} aria-label="Close">
-          <X size={16} />
-        </button>
-      </header>
+      <SheetHead title={editing ? 'Edit task' : 'New task'} onClose={onClose} />
 
       <div className="composer-title">
         <input
           ref={titleRef}
+          className="field-input"
           autoFocus
           value={draft.title}
           onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
@@ -190,8 +176,8 @@ function ComposerForm({
               save()
             }
           }}
-          placeholder="What’s happening?"
-          aria-label="Title"
+          placeholder="Task name"
+          aria-label="Task name"
         />
         <AnimatePresence initial={false}>
           {detected && (
@@ -200,9 +186,9 @@ function ComposerForm({
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              transition={spring}
+              transition={arrive}
             >
-              <Sparkles size={12} />
+              <small>Detected</small>
               <span className="detected-tokens">
                 <AnimatePresence mode="popLayout" initial={false}>
                   {detected.tokens.map((token) => (
@@ -221,6 +207,7 @@ function ComposerForm({
               </span>
               <button
                 type="button"
+                className="ghost-button sm"
                 onClick={() => {
                   setDetect(false)
                   setDraft((current) => {
@@ -238,43 +225,20 @@ function ComposerForm({
         </AnimatePresence>
       </div>
 
-      <motion.div className="composer-summary" layout transition={spring}>
-        <span className="summary-icon">
-          <CalendarClock size={18} />
-        </span>
-        <div>
-          <AnimatePresence mode="popLayout" initial={false}>
-            <motion.strong
-              key={summaryDay}
-              initial={{ y: 10, opacity: 0, filter: 'blur(4px)' }}
-              animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
-              exit={{ y: -10, opacity: 0, filter: 'blur(4px)' }}
-              transition={spring}
-            >
-              {summaryDay}
-            </motion.strong>
-          </AnimatePresence>
-          <AnimatePresence mode="popLayout" initial={false}>
-            <motion.small
-              key={`${draft.dueTime}-${draft.estimateMinutes}-${draft.recurrence}`}
-              initial={{ y: 8, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -8, opacity: 0 }}
-              transition={spring}
-            >
-              {hasTime
-                ? timeRangeLabel(draft.dueTime, draft.estimateMinutes)
-                : `Anytime · ${durationLabel(draft.estimateMinutes)}`}
-              {draft.recurrence !== 'none' && (
-                <>
-                  {' · '}
-                  <Repeat2 size={11} /> {draft.recurrence}
-                </>
-              )}
-            </motion.small>
-          </AnimatePresence>
-        </div>
-      </motion.div>
+      <div className="composer-summary" aria-live="polite">
+        <strong>{summaryDay}</strong>
+        <small className="tabular">
+          {hasTime
+            ? timeRangeLabel(draft.dueTime, draft.estimateMinutes)
+            : `Anytime · ${durationLabel(draft.estimateMinutes)}`}
+          {draft.recurrence !== 'none' && (
+            <>
+              {' · '}
+              <Repeat2 size={13} /> {draft.recurrence}
+            </>
+          )}
+        </small>
+      </div>
 
       <section className="field-block">
         <span className="field-label">Day</span>
@@ -341,7 +305,7 @@ function ComposerForm({
               aria-label="Five minutes shorter"
               onClick={() => patch('estimateMinutes', Math.max(5, draft.estimateMinutes - 5))}
             >
-              <Minus size={13} />
+              <Minus size={15} />
             </button>
             <span>{durationLabel(draft.estimateMinutes)}</span>
             <button
@@ -349,7 +313,7 @@ function ComposerForm({
               aria-label="Five minutes longer"
               onClick={() => patch('estimateMinutes', Math.min(480, draft.estimateMinutes + 5))}
             >
-              <Plus size={13} />
+              <Plus size={15} />
             </button>
           </div>
         </div>
@@ -369,7 +333,7 @@ function ComposerForm({
       <Collapse open={hasTime}>
         <section className="field-block">
           <span className="field-label">
-            <Bell size={11} /> Remind me
+            <Bell size={14} /> Remind me
           </span>
           <div className="chip-row">
             {reminders.map((minutes) => (
@@ -403,26 +367,23 @@ function ComposerForm({
       <section className="field-block">
         <span className="field-label">Details</span>
         <div className="chip-row">
-          {areaKeys.map((key) => {
-            const Icon = areas[key].icon
-            return (
-              <Chip
-                key={key}
-                className={cn('area-chip', key)}
-                active={draft.category === key}
-                onClick={() => patch('category', key)}
-              >
-                <Icon size={13} />
-                {areas[key].label}
-              </Chip>
-            )
-          })}
+          {areaKeys.map((key) => (
+            <Chip
+              key={key}
+              className="area-chip"
+              active={draft.category === key}
+              onClick={() => patch('category', key)}
+            >
+              <i className={`area-dot ${key}`} />
+              {areas[key].label}
+            </Chip>
+          ))}
           <Chip
             className="important-chip"
             active={draft.priority === 1}
             onClick={() => patch('priority', draft.priority === 1 ? 2 : 1)}
           >
-            <Star size={13} />
+            <Star size={15} />
             Important
           </Chip>
         </div>
@@ -436,7 +397,7 @@ function ComposerForm({
                 onClick={() => patch('goalId', draft.goalId === goal.id ? undefined : goal.id)}
                 title={`Counts toward “${goal.title}”`}
               >
-                <span>{goal.emoji}</span>
+                <span aria-hidden>{goal.emoji}</span>
                 {goal.title}
               </Chip>
             ))}
@@ -449,11 +410,11 @@ function ComposerForm({
             autoFocus={!base.notes}
             value={draft.notes}
             onChange={(event) => patch('notes', event.target.value)}
-            placeholder="Notes, links, anything useful"
+            placeholder="Notes"
           />
         ) : (
-          <button type="button" className="add-note" onClick={() => setNotesOpen(true)}>
-            <Plus size={12} /> Add a note
+          <button type="button" className="ghost-button sm add-note" onClick={() => setNotesOpen(true)}>
+            <Plus size={15} /> Add a note
           </button>
         )}
       </section>
@@ -464,23 +425,19 @@ function ComposerForm({
             type="button"
             className="icon-button danger"
             aria-label="Delete task"
+            title="Delete task"
             onClick={() => onDelete(request.taskId!)}
           >
-            <Trash2 size={15} />
+            <Trash2 size={16} />
           </button>
         )}
         <button type="button" className="ghost-button" onClick={onClose}>
           Cancel
         </button>
-        <motion.button
-          type="submit"
-          className="primary-button"
-          disabled={!canSave}
-          whileTap={{ scale: 0.97 }}
-        >
+        <button type="submit" className="primary-button" disabled={!canSave}>
           {editing ? 'Save' : 'Add task'}
           <kbd>{window.dashboard.platform === 'darwin' ? '⌘↵' : 'Ctrl+Enter'}</kbd>
-        </motion.button>
+        </button>
       </footer>
     </form>
   )

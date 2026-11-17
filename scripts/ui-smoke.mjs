@@ -74,7 +74,7 @@ const todayScreenshot = await capture('today-smoke')
 await nav('Goals')
 const goalCount = await evaluate('document.querySelectorAll(".goal-card").length')
 if (goalCount < 1) throw new Error('Expected at least one goal card.')
-const goalDayCount = await evaluate('document.querySelectorAll(".goal-card:first-child .goal-day").length')
+const goalDayCount = await evaluate('document.querySelectorAll(".goal-card:first-child .goal-week .stop").length')
 if (goalDayCount !== 7) throw new Error(`Expected a seven-day goal week, found ${goalDayCount}.`)
 const goalsScreenshot = await capture('goals-smoke')
 

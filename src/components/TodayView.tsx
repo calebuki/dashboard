@@ -1,15 +1,15 @@
-import { forwardRef, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { ArrowUpRight, ChevronDown, CornerDownLeft, SlidersHorizontal, Sparkles, WifiOff } from 'lucide-react'
+import { forwardRef, useMemo, useState, type ReactNode } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
+import { ArrowRight, Check, ChevronDown, CornerDownLeft, Plus, SlidersHorizontal, WifiOff } from 'lucide-react'
 import type { Category, DashboardState, Goal, SyncStatus, Task } from '../types'
 import { addDays, formatLongDate, todayKey } from '../lib/date'
-import { durationLabel, greeting, relativeDayLabel, timeLabel } from '../lib/format'
+import { durationLabel, relativeDayLabel, timeLabel } from '../lib/format'
 import { logGoalDays } from '../lib/daily-log'
 import { goalProgress } from '../lib/goals'
 import { parseQuickTask } from '../lib/quick-add'
 import { taskIsCompleteOn, taskMatchesDate } from '../lib/state'
 import { areas } from './areas'
-import { Burst, ProgressRing, RollingNumber, Segmented, spring } from './primitives'
+import { EmptyNote, Segmented, StationLine, arrive } from './primitives'
 import { TaskItem } from './TaskItem'
 import { cn } from '@/lib/utils'
 
@@ -100,7 +100,11 @@ export function TodayView({
     .slice(0, 8)
 
   const minutesLeft = open.reduce((sum, t) => sum + t.estimateMinutes, 0)
-  const progress = todays.length ? done.length / todays.length : 0
+  const summary = !todays.length
+    ? 'Nothing planned'
+    : !open.length
+      ? `All ${todays.length} done`
+      : `${done.length} of ${todays.length} done · ${durationLabel(minutesLeft)} left`
 
   const rows: Row[] = []
   if (scheduled.length) {
@@ -140,20 +144,19 @@ export function TodayView({
   return (
     <section className="view today-view">
       <header className="view-head">
-        <div>
-          <p className="eyebrow">{formatLongDate(today)}</p>
-          <AnimatedHeading text={open.length === 0 && todays.length > 0 ? 'All clear.' : greeting()} />
-          <p className="view-sub">
-            {open.length === 0
-              ? todays.length
-                ? 'Everything for today is done. Nice.'
-                : 'Nothing planned yet — add one small thing.'
-              : `${open.length} to go · about ${durationLabel(minutesLeft)}`}
-          </p>
-        </div>
-        <ProgressRing value={progress} size={58} stroke={5} className={cn(progress === 1 && 'complete')}>
-          <RollingNumber value={`${done.length}/${todays.length}`} />
-        </ProgressRing>
+        <h1>Today</h1>
+        <p className="view-meta">
+          {formatLongDate(today)} · <span className="tabular">{summary}</span>
+        </p>
+        {todays.length > 0 && (
+          <StationLine
+            className="today-line"
+            total={todays.length}
+            filled={done.length}
+            color="var(--route-tomato)"
+            label={`${done.length} of ${todays.length} tasks done`}
+          />
+        )}
       </header>
 
       <QuickAdd onAdd={onQuickAdd} onDetails={onDetails} />
@@ -166,7 +169,7 @@ export function TodayView({
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
           >
-            <WifiOff size={13} /> Offline — changes are safe and will sync later.
+            <WifiOff size={15} /> Offline. Changes will sync when you reconnect.
           </motion.div>
         )}
       </AnimatePresence>
@@ -184,6 +187,13 @@ export function TodayView({
       <FilterBar value={filter} onChange={onFilter} />
 
       <div className="task-list">
+        {todays.length === 0 && (
+          <EmptyNote>
+            {filter === 'all'
+              ? 'Nothing due today. Type a task above, like “gym fri 7am #work”.'
+              : `No ${areas[filter].label.toLowerCase()} tasks today.`}
+          </EmptyNote>
+        )}
         <AnimatePresence initial={false} mode="popLayout">
           {rows.map((row) =>
             row.kind === 'header' ? (
@@ -204,12 +214,6 @@ export function TodayView({
             )
           )}
         </AnimatePresence>
-        {todays.length === 0 && (
-          <Empty
-            title={filter === 'all' ? 'A clean slate' : `No ${areas[filter].label.toLowerCase()} tasks today`}
-            body="Type above — try “Call Sam tomorrow 6pm” or “Gym every weekday 7am”."
-          />
-        )}
       </div>
     </section>
   )
@@ -227,9 +231,9 @@ const SectionHeader = forwardRef<HTMLDivElement, { row: Extract<Row, { kind: 'he
     const content = (
       <>
         <span>{row.label}</span>
-        {row.meta && <small>{row.meta}</small>}
+        {row.meta && <small className="tabular">{row.meta}</small>}
         {row.toggle && (
-          <ChevronDown size={13} className={cn('section-chevron', row.open && 'open')} />
+          <ChevronDown size={16} className={cn('section-chevron', row.open && 'open')} />
         )}
       </>
     )
@@ -241,7 +245,7 @@ const SectionHeader = forwardRef<HTMLDivElement, { row: Extract<Row, { kind: 'he
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={spring}
+        transition={arrive}
       >
         {row.toggle ? (
           <button type="button" onClick={row.toggle} aria-expanded={row.open}>
@@ -255,37 +259,6 @@ const SectionHeader = forwardRef<HTMLDivElement, { row: Extract<Row, { kind: 'he
   }
 )
 
-export function AnimatedHeading({ text }: { text: string }) {
-  const reduce = useReducedMotion()
-  return (
-    <AnimatePresence mode="wait" initial={false}>
-      <motion.h1 key={text} aria-label={text}>
-        {text.split(' ').map((word, index) => (
-          <motion.span
-            key={`${word}-${index}`}
-            className="heading-word"
-            initial={reduce ? false : { opacity: 0, y: 10, filter: 'blur(6px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            exit={reduce ? undefined : { opacity: 0, y: -8, filter: 'blur(6px)' }}
-            transition={{ ...spring, delay: index * 0.06 }}
-            aria-hidden
-          >
-            {word}
-          </motion.span>
-        ))}
-      </motion.h1>
-    </AnimatePresence>
-  )
-}
-
-const examples = [
-  'Call mom tomorrow 6pm',
-  'Gym every weekday 7am',
-  'Essay due friday #school !',
-  'Standup weekdays 9:15 #work',
-  'Water plants every sunday'
-]
-
 function QuickAdd({
   onAdd,
   onDetails
@@ -295,14 +268,7 @@ function QuickAdd({
 }) {
   const [value, setValue] = useState('')
   const [focused, setFocused] = useState(false)
-  const [example, setExample] = useState(0)
   const parsed = useMemo(() => (value.trim() ? parseQuickTask(value) : null), [value])
-
-  useEffect(() => {
-    if (value || focused) return
-    const id = setInterval(() => setExample((n) => (n + 1) % examples.length), 3200)
-    return () => clearInterval(id)
-  }, [value, focused])
 
   const submit = () => {
     if (!value.trim()) return
@@ -315,7 +281,8 @@ function QuickAdd({
         parsed.dueTime ? <b key="time">{timeLabel(parsed.dueTime)}</b> : null,
         parsed.recurrence ? <b key="rep">{parsed.recurrence}</b> : null,
         parsed.category ? (
-          <b key="cat" className={parsed.category}>
+          <b key="cat">
+            <i className={`area-dot ${parsed.category}`} />
             {areas[parsed.category].label}
           </b>
         ) : null,
@@ -326,11 +293,13 @@ function QuickAdd({
   return (
     <div className={cn('quick-add', focused && 'focused', value && 'filled')}>
       <div className="quick-add-row">
-        <Sparkles size={16} className="quick-add-icon" />
+        <Plus size={18} className="quick-add-icon" aria-hidden />
         <div className="quick-add-field">
           <input
             id="quick-add"
-            aria-label="Quick add a task"
+            aria-label="Add a task"
+            placeholder="Add a task"
+            autoComplete="off"
             value={value}
             onChange={(event) => setValue(event.target.value)}
             onFocus={() => setFocused(true)}
@@ -344,43 +313,29 @@ function QuickAdd({
               else if (event.key === 'Escape') event.currentTarget.blur()
             }}
           />
-          {!value && (
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.span
-                key={example}
-                className="quick-add-placeholder"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.25 }}
-              >
-                Try “{examples[example]}”
-              </motion.span>
-            </AnimatePresence>
-          )}
         </div>
         <button
           type="button"
           className="quick-add-details"
-          title="Open all options (Shift+Enter)"
-          aria-label="Open all options"
+          title="More options (Shift+Enter)"
+          aria-label="More options"
           onClick={() => {
             onDetails(value)
             setValue('')
           }}
         >
-          <SlidersHorizontal size={15} />
+          <SlidersHorizontal size={17} />
         </button>
-        <motion.button
+        <button
           type="button"
           className="quick-add-submit"
           aria-label="Add task"
+          title="Add (Enter)"
           disabled={!value.trim()}
           onClick={submit}
-          whileTap={{ scale: 0.9 }}
         >
-          <CornerDownLeft size={15} />
-        </motion.button>
+          <CornerDownLeft size={17} />
+        </button>
       </div>
       <AnimatePresence initial={false}>
         {parsed && (
@@ -389,7 +344,7 @@ function QuickAdd({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={spring}
+            transition={arrive}
           >
             <span className="preview-title">{parsed.title}</span>
             <span className="preview-chips">{chips}</span>
@@ -414,11 +369,11 @@ function GoalStrip({
   onOpen: () => void
 }) {
   return (
-    <div className="goal-strip">
+    <section className="goal-strip" aria-labelledby="goal-strip-title">
       <div className="goal-strip-head">
-        <span>This week</span>
+        <h2 id="goal-strip-title">This week</h2>
         <button type="button" onClick={onOpen}>
-          Goals <ArrowUpRight size={12} />
+          All goals <ArrowRight size={14} />
         </button>
       </div>
       <div className="goal-strip-row">
@@ -432,7 +387,7 @@ function GoalStrip({
           />
         ))}
       </div>
-    </div>
+    </section>
   )
 }
 
@@ -448,55 +403,42 @@ function GoalPill({
   onCheckin: () => void
 }) {
   const progress = goalProgress(goal, tasks, undefined, logDays)
-  const [pop, setPop] = useState(0)
   return (
-    <motion.button
+    <button
       type="button"
       className={cn('goal-pill', goal.color, progress.checkedToday && 'checked')}
-      whileTap={{ scale: 0.95 }}
+      aria-pressed={progress.checkedToday}
       onClick={() => {
-        if (progress.lockedToday) return
-        if (!progress.checkedToday) setPop((n) => n + 1)
-        onCheckin()
+        if (!progress.lockedToday) onCheckin()
       }}
       title={
         progress.lockedToday
           ? 'Counted today from a linked task or your daily log'
           : progress.checkedToday
-            ? 'Checked in today — tap to undo'
-            : 'Tap to check in for today'
+            ? 'Done today. Click to undo.'
+            : 'Mark done for today'
       }
     >
-      <ProgressRing value={progress.done / progress.target} size={34} stroke={3.5}>
-        <span className="goal-pill-emoji">{goal.emoji}</span>
-      </ProgressRing>
-      <Burst key={pop} show={pop > 0} color={`var(--goal-${goal.color})`} />
-      <span className="goal-pill-text">
-        <strong>{goal.title}</strong>
-        <small>
-          <RollingNumber value={progress.done} />/{progress.target}
-          {progress.checkedToday && ' · today ✓'}
-        </small>
+      <span className="goal-pill-emoji" aria-hidden>
+        {goal.emoji}
       </span>
-    </motion.button>
-  )
-}
-
-export function Empty({ title, body }: { title: string; body: string }) {
-  return (
-    <motion.div
-      className="empty"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={spring}
-    >
-      <div className="empty-art" aria-hidden>
-        <i />
-        <i />
-        <i />
-      </div>
-      <strong>{title}</strong>
-      <span>{body}</span>
-    </motion.div>
+      <span className="goal-pill-text">
+        <strong>
+          {goal.title}
+          {progress.checkedToday && <Check size={14} strokeWidth={3} aria-label="Done today" />}
+        </strong>
+        <span className="goal-pill-progress">
+          <StationLine
+            total={progress.target}
+            filled={progress.done}
+            color={`var(--goal-${goal.color})`}
+            label={`${progress.done} of ${progress.target} this week`}
+          />
+          <small className="tabular">
+            {progress.done}/{progress.target}
+          </small>
+        </span>
+      </span>
+    </button>
   )
 }

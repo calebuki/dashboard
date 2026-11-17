@@ -1,15 +1,13 @@
-import { useEffect, useId, useRef, type MouseEvent, type ReactNode } from 'react'
-import {
-  AnimatePresence,
-  motion,
-  useDragControls,
-  useReducedMotion,
-  type PanInfo
-} from 'motion/react'
+import { useEffect, useId, useRef, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
+import { AnimatePresence, motion, useDragControls, type PanInfo } from 'motion/react'
+import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export const spring = { type: 'spring', stiffness: 420, damping: 34, mass: 0.8 } as const
 export const softSpring = { type: 'spring', stiffness: 260, damping: 30 } as const
+/** Matches --ease-out in styles.css: for anything responding to the person. */
+export const easeOut = [0.23, 1, 0.32, 1] as const
+export const arrive = { duration: 0.24, ease: easeOut } as const
 
 export function Segmented<T extends string | number>({
   options,
@@ -89,106 +87,111 @@ export function Chip({
   title?: string
 }) {
   return (
-    <motion.button
+    <button
       type="button"
       title={title}
+      aria-pressed={active}
       className={cn('chip', active && 'active', className)}
       onClick={onClick}
-      whileTap={{ scale: 0.94 }}
-      transition={spring}
     >
       {children}
-    </motion.button>
+    </button>
   )
 }
 
-/** Digits roll vertically when the value changes. */
-export function RollingNumber({ value, className }: { value: number | string; className?: string }) {
-  const reduce = useReducedMotion()
-  return (
-    <span className={cn('rolling-number', className)}>
-      <AnimatePresence mode="popLayout" initial={false}>
-        <motion.span
-          key={String(value)}
-          initial={reduce ? false : { y: '70%', opacity: 0, filter: 'blur(3px)' }}
-          animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
-          exit={reduce ? undefined : { y: '-70%', opacity: 0, filter: 'blur(3px)' }}
-          transition={spring}
-        >
-          {value}
-        </motion.span>
-      </AnimatePresence>
-    </span>
-  )
-}
-
-export function ProgressRing({
-  value,
-  size = 56,
-  stroke = 5,
-  className,
-  children
+/**
+ * A run of stations on one line: the first `filled` light up and the line joins them.
+ * Long runs collapse into a plain track so the stations never crowd.
+ */
+export function StationLine({
+  total,
+  filled,
+  color,
+  label,
+  className
 }: {
-  value: number
-  size?: number
-  stroke?: number
+  total: number
+  filled: number
+  color: string
+  label: string
   className?: string
-  children?: ReactNode
 }) {
-  const radius = (size - stroke) / 2
-  const circumference = 2 * Math.PI * radius
-  const clamped = Math.min(1, Math.max(0, value))
+  const count = Math.max(0, total)
+  const lit = Math.min(count, Math.max(0, filled))
+  const crowded = count > 16
+  const reach = crowded ? (count ? lit / count : 0) : count > 1 && lit > 1 ? (lit - 1) / (count - 1) : 0
   return (
-    <div className={cn('progress-ring', className)} style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
-        <circle className="track" cx={size / 2} cy={size / 2} r={radius} strokeWidth={stroke} />
-        <motion.circle
-          className="fill"
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          strokeWidth={stroke}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          initial={{ strokeDashoffset: circumference }}
-          animate={{ strokeDashoffset: circumference * (1 - clamped) }}
-          transition={softSpring}
-        />
-      </svg>
-      {children && <div className="progress-ring-content">{children}</div>}
+    <div
+      className={cn('station-line', crowded && 'crowded', className)}
+      style={{ '--route': color, '--count': count, '--span': Math.max(1, count - 1) } as CSSProperties}
+      role="img"
+      aria-label={label}
+    >
+      <span className="station-track">
+        <i style={{ transform: `scaleX(${reach})` }} />
+      </span>
+      {!crowded &&
+        Array.from({ length: count }, (_, index) => (
+          <span
+            key={index}
+            className={cn('station', index < lit && 'on')}
+            style={{ '--i': index } as CSSProperties}
+          />
+        ))}
     </div>
   )
 }
 
-/** A small radial burst of dots, used when something gets completed. */
-export function Burst({ show, color = 'var(--accent)' }: { show: boolean; color?: string }) {
-  const reduce = useReducedMotion()
-  if (reduce) return null
+export interface Stop {
+  key: string
+  on: boolean
+  label: ReactNode
+  ariaLabel: string
+  current?: boolean
+  dim?: boolean
+  disabled?: boolean
+  title?: string
+}
+
+/** Clickable stations on a line, one per day. Neighbouring lit stations are joined. */
+export function StopLine({
+  stops,
+  color,
+  label,
+  onSelect,
+  className
+}: {
+  stops: Stop[]
+  color: string
+  label: string
+  onSelect: (key: string) => void
+  className?: string
+}) {
   return (
-    <AnimatePresence>
-      {show && (
-        <span className="burst" aria-hidden>
-          {Array.from({ length: 8 }, (_, index) => {
-            const angle = (index / 8) * Math.PI * 2
-            return (
-              <motion.i
-                key={index}
-                style={{ background: color }}
-                initial={{ x: 0, y: 0, scale: 1, opacity: 1 }}
-                animate={{
-                  x: Math.cos(angle) * 18,
-                  y: Math.sin(angle) * 18,
-                  scale: 0,
-                  opacity: 0
-                }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.5, ease: [0.2, 0.8, 0.3, 1] }}
-              />
-            )
-          })}
-        </span>
-      )}
-    </AnimatePresence>
+    <div className={cn('stop-line', className)} style={{ '--route': color } as CSSProperties} role="group" aria-label={label}>
+      {stops.map((stop, index) => (
+        <button
+          type="button"
+          key={stop.key}
+          disabled={stop.disabled}
+          title={stop.title}
+          aria-label={stop.ariaLabel}
+          aria-pressed={stop.on}
+          className={cn(
+            'stop',
+            stop.on && 'on',
+            stop.current && 'current',
+            stop.dim && 'dim',
+            stop.on && stops[index - 1]?.on && 'join-prev',
+            stop.on && stops[index + 1]?.on && 'join-next'
+          )}
+          onClick={() => onSelect(stop.key)}
+        >
+          <i />
+          <small>{stop.label}</small>
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -240,8 +243,8 @@ export function Sheet({
             className={cn('sheet', className)}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 380, damping: 36 }}
+            exit={{ y: '100%', transition: { duration: 0.18, ease: 'easeIn' } }}
+            transition={{ duration: 0.34, ease: easeOut }}
             drag="y"
             dragListener={false}
             dragControls={controls}
@@ -260,6 +263,19 @@ export function Sheet({
   )
 }
 
+/** Title row for a sheet: what it is, and a way out. */
+export function SheetHead({ title, onClose, children }: { title: ReactNode; onClose: () => void; children?: ReactNode }) {
+  return (
+    <header className="sheet-head">
+      <h2>{title}</h2>
+      {children}
+      <button type="button" className="icon-button close-button" onClick={onClose} aria-label="Close">
+        <X size={17} />
+      </button>
+    </header>
+  )
+}
+
 export function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
   return (
     <AnimatePresence initial={false}>
@@ -269,11 +285,16 @@ export function Collapse({ open, children }: { open: boolean; children: ReactNod
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: 'auto', opacity: 1 }}
           exit={{ height: 0, opacity: 0 }}
-          transition={softSpring}
+          transition={{ duration: 0.26, ease: easeOut }}
         >
           {children}
         </motion.div>
       )}
     </AnimatePresence>
   )
+}
+
+/** A quiet line of text for when a list has nothing in it. */
+export function EmptyNote({ children }: { children: ReactNode }) {
+  return <p className="empty-note">{children}</p>
 }

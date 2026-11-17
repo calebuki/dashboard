@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { spring } from './primitives'
+import { arrive } from './primitives'
 
 export interface ToastMessage {
   id: number
@@ -24,10 +24,10 @@ export function Toast({ toast, onDismiss }: { toast: ToastMessage | null; onDism
           <motion.div
             key={toast.id}
             className="toast"
-            initial={{ y: 24, opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
-            animate={{ y: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }}
-            exit={{ y: 12, opacity: 0, scale: 0.95, filter: 'blur(4px)' }}
-            transition={spring}
+            initial={{ y: 16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 8, opacity: 0, transition: { duration: 0.14 } }}
+            transition={arrive}
           >
             <span>{toast.text}</span>
             {toast.action && (

@@ -1,52 +1,37 @@
 import { AnimatePresence, motion } from 'motion/react'
-import {
-  Cloud,
-  CloudOff,
-  Ghost,
-  LoaderCircle,
-  Minus,
-  Moon,
-  Pin,
-  PinOff,
-  Sun,
-  WifiOff,
-  X
-} from 'lucide-react'
+import { Ghost, Minus, Moon, Pin, PinOff, Sun, X } from 'lucide-react'
 import type { SyncStatus } from '../types'
 import { cn } from '@/lib/utils'
 
-export function SyncPill({ status }: { status: SyncStatus }) {
-  const Icon =
-    status.phase === 'offline'
-      ? WifiOff
-      : status.phase === 'error' || status.phase === 'unavailable'
-        ? CloudOff
-        : status.phase === 'syncing'
-          ? LoaderCircle
-          : Cloud
-  const text =
-    status.phase === 'synced'
-      ? 'Synced'
-      : status.phase === 'syncing'
-        ? 'Syncing'
-        : status.phase === 'offline'
-          ? 'Offline'
+const syncText = (status: SyncStatus) =>
+  status.phase === 'synced'
+    ? 'Synced'
+    : status.phase === 'syncing'
+      ? 'Syncing'
+      : status.phase === 'offline'
+        ? 'Offline'
+        : status.phase === 'error'
+          ? 'Sync error'
           : status.signedIn
-            ? 'Issue'
-            : 'Local'
+            ? 'Sync paused'
+            : 'On this computer'
+
+export function SyncState({ status }: { status: SyncStatus }) {
+  const text = syncText(status)
   return (
-    <span className={cn('sync-pill', status.phase)} title={status.message ?? text}>
-      <Icon className={status.phase === 'syncing' ? 'spin' : ''} size={11} />
-      <AnimatePresence mode="popLayout" initial={false}>
-        <motion.span
-          key={text}
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-        >
-          {text}
-        </motion.span>
-      </AnimatePresence>
+    <span className={cn('sync-state', status.phase)} title={status.message ?? text}>
+      <i aria-hidden />
+      {text}
+    </span>
+  )
+}
+
+/** The wordmark: lowercase, with the full stop drawn as a station. */
+export function Wordmark() {
+  return (
+    <span className="wordmark">
+      dashboard
+      <span aria-hidden className="wordmark-stop" />
     </span>
   )
 }
@@ -71,13 +56,8 @@ export function TitleBar({
   const mac = window.dashboard.platform === 'darwin'
   return (
     <header className="title-bar">
-      <div className="brand-mark" aria-hidden>
-        <i />
-        <i />
-        <i />
-      </div>
-      <b>Dashboard</b>
-      <SyncPill status={sync} />
+      <Wordmark />
+      <SyncState status={sync} />
       <div className="window-actions">
         <button
           type="button"
@@ -92,36 +72,38 @@ export function TitleBar({
             <motion.span
               key={dark ? 'moon' : 'sun'}
               className="icon-swap"
-              initial={{ rotate: -90, scale: 0.4, opacity: 0 }}
-              animate={{ rotate: 0, scale: 1, opacity: 1 }}
-              exit={{ rotate: 90, scale: 0.4, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 500, damping: 26 }}
+              initial={{ rotate: -90, opacity: 0 }}
+              animate={{ rotate: 0, opacity: 1 }}
+              exit={{ rotate: 90, opacity: 0 }}
+              transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
             >
-              {dark ? <Moon size={14} /> : <Sun size={14} />}
+              {dark ? <Moon size={16} /> : <Sun size={16} />}
             </motion.span>
           </AnimatePresence>
         </button>
         <button
           type="button"
-          aria-label="Toggle ghost mode"
-          title="Ghost mode (see-through)"
+          aria-label="See-through mode"
+          aria-pressed={ghost}
+          title="See-through mode"
           className={ghost ? 'active' : ''}
           onClick={onGhost}
         >
-          <Ghost size={14} />
+          <Ghost size={16} />
         </button>
         <button
           type="button"
-          aria-label="Toggle always on top"
-          title={pinned ? 'Pinned on top' : 'Not pinned'}
+          aria-label="Keep on top"
+          aria-pressed={pinned}
+          title={pinned ? 'Kept on top' : 'Keep on top'}
           className={pinned ? 'active' : ''}
           onClick={onPin}
         >
-          {pinned ? <Pin size={14} /> : <PinOff size={14} />}
+          {pinned ? <Pin size={16} /> : <PinOff size={16} />}
         </button>
         {!mac && (
-          <button type="button" aria-label="Minimize" onClick={() => window.dashboard.minimize()}>
-            <Minus size={14} />
+          <button type="button" aria-label="Minimize" title="Minimize" onClick={() => window.dashboard.minimize()}>
+            <Minus size={16} />
           </button>
         )}
         {!mac && (
@@ -129,9 +111,10 @@ export function TitleBar({
             type="button"
             className="close"
             aria-label="Hide to tray"
+            title="Hide to tray"
             onClick={() => window.dashboard.hide()}
           >
-            <X size={14} />
+            <X size={16} />
           </button>
         )}
       </div>

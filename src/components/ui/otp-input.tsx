@@ -12,12 +12,12 @@ const PATTERNS = {
 
 // success draws its own ring in svg, so no css ring here
 const RING = {
-  idle: 'focus-visible:ring-2 focus-visible:ring-[#868593]/50',
+  idle: 'focus-visible:ring-[3px] focus-visible:ring-[var(--ring)]',
   success: '',
-  error: 'ring-2 ring-[#FF3B30]/70 delay-150'
+  error: 'ring-2 ring-[var(--danger)] delay-150'
 } as const
 
-const SUCCESS = '#34C759'
+const SUCCESS = 'var(--route-jade)'
 
 const SIZES = {
   sm: {
@@ -47,7 +47,7 @@ const SIZES = {
 } as const
 
 const SLOT_CLASS =
-  'bg-[#F4F4F9] dark:bg-[#262626] text-center font-medium text-transparent caret-transparent outline-none transition-shadow duration-200 selection:bg-transparent disabled:cursor-not-allowed disabled:opacity-50'
+  'bg-[var(--paper-strong)] text-center font-medium text-transparent caret-transparent outline-none transition-shadow duration-200 selection:bg-transparent disabled:cursor-not-allowed disabled:opacity-50'
 
 const ROLL_SPRING = { type: 'spring', stiffness: 500, damping: 34 } as const
 const CARET_SPRING = { type: 'spring', stiffness: 500, damping: 40 } as const
@@ -324,7 +324,7 @@ export function OtpInput({
                     exit={reduceMotion ? { opacity: 0 } : 'exit'}
                     transition={reduceMotion ? { duration: 0 } : ROLL_SPRING}
                     data-slot="otp-input-char"
-                    className={cn('font-semibold text-black dark:text-white', scale.text)}
+                    className={cn('font-bold text-[var(--ink)]', scale.text)}
                   >
                     {mask ? '•' : slot}
                   </motion.span>
@@ -345,7 +345,7 @@ export function OtpInput({
               opacity: BLINK
             }}
             className={cn(
-              'pointer-events-none absolute left-0 top-1/2 w-0.5 rounded-full bg-black dark:bg-white',
+              'pointer-events-none absolute left-0 top-1/2 w-0.5 rounded-full bg-[var(--route-tomato)]',
               scale.caret
             )}
           />

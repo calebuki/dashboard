@@ -1,21 +1,9 @@
 import { useState, type ReactNode } from 'react'
-import {
-  Bell,
-  Blend,
-  CircleAlert,
-  Cloud,
-  Keyboard,
-  Monitor,
-  Moon,
-  Pin,
-  Power,
-  RefreshCw,
-  Sun
-} from 'lucide-react'
+import { CircleAlert, RefreshCw } from 'lucide-react'
 import { OtpInput, type OtpStatus } from '@/components/ui/otp-input'
 import type { DashboardSettings, SyncStatus, ThemePreference } from '../types'
 import { Segmented, Switch } from './primitives'
-import { SyncPill } from './TitleBar'
+import { SyncState } from './TitleBar'
 
 export function SettingsView({
   settings,
@@ -39,14 +27,11 @@ export function SettingsView({
   return (
     <section className="view settings-view">
       <header className="view-head">
-        <div>
-          <p className="eyebrow">Preferences</p>
-          <h1>Settings</h1>
-        </div>
+        <h1>Settings</h1>
       </header>
 
       <Group label="Appearance">
-        <Row icon={<Sun size={15} />} title="Theme" detail="Match your system or pick one.">
+        <Row title="Theme">
           <Segmented<ThemePreference>
             size="sm"
             label="Theme"
@@ -56,20 +41,20 @@ export function SettingsView({
               onTheme(theme, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
             }}
             options={[
-              { value: 'system', label: <Monitor size={13} />, title: 'System' },
-              { value: 'light', label: <Sun size={13} />, title: 'Light' },
-              { value: 'dark', label: <Moon size={13} />, title: 'Dark' }
+              { value: 'system', label: 'System' },
+              { value: 'light', label: 'Light' },
+              { value: 'dark', label: 'Dark' }
             ]}
           />
         </Row>
         <Row
-          icon={<Blend size={15} />}
-          title={settings.overlayMode ? 'Ghost opacity' : 'Window opacity'}
-          detail={`${Math.round(opacity * 100)}%${settings.overlayMode ? ' · ghost mode is on' : ''}`}
+          title={settings.overlayMode ? 'See-through opacity' : 'Window opacity'}
+          detail={`${Math.round(opacity * 100)}%${settings.overlayMode ? ' · see-through mode is on' : ''}`}
         >
           <input
             type="range"
             className="range"
+            aria-label={settings.overlayMode ? 'See-through opacity' : 'Window opacity'}
             min="40"
             max="100"
             value={Math.round(opacity * 100)}
@@ -84,9 +69,9 @@ export function SettingsView({
       </Group>
 
       <Group label="Window">
-        <Row icon={<Pin size={15} />} title="Always on top" detail="Keep your day within reach.">
+        <Row title="Keep on top" detail="Stay above other windows">
           <Switch
-            label="Always on top"
+            label="Keep on top"
             checked={settings.alwaysOnTop}
             onChange={(value) => {
               onSettings({ alwaysOnTop: value })
@@ -94,11 +79,7 @@ export function SettingsView({
             }}
           />
         </Row>
-        <Row
-          icon={<Power size={15} />}
-          title="Open at login"
-          detail={`Start quietly with ${window.dashboard.platform === 'darwin' ? 'your Mac' : 'Windows'}.`}
-        >
+        <Row title="Open at login" detail={`Start when you sign in to ${mac ? 'your Mac' : 'Windows'}`}>
           <Switch
             label="Open at login"
             checked={settings.launchAtLogin}
@@ -108,7 +89,7 @@ export function SettingsView({
             }}
           />
         </Row>
-        <Row icon={<Bell size={15} />} title="Notifications" detail="Reminders, due dates, and timers.">
+        <Row title="Notifications" detail="Reminders, due dates and timers">
           <Switch
             label="Notifications"
             checked={settings.notifications}
@@ -123,7 +104,6 @@ export function SettingsView({
 
       <Group label="Shortcuts">
         <div className="shortcuts">
-          <Keyboard size={15} />
           <dl>
             <dt>
               <kbd>{mod}</kbd>
@@ -138,7 +118,7 @@ export function SettingsView({
             <dt>
               <kbd>/</kbd>
             </dt>
-            <dd>Quick add</dd>
+            <dd>Jump to the task box</dd>
             <dt>
               <kbd>1</kbd>–<kbd>5</kbd>
             </dt>
@@ -147,7 +127,7 @@ export function SettingsView({
               <kbd>{shift}</kbd>
               <kbd>{enter}</kbd>
             </dt>
-            <dd>Quick add with all options</dd>
+            <dd>Add with more options</dd>
             <dt>
               <kbd>{mod}</kbd>
               <kbd>Z</kbd>
@@ -161,31 +141,23 @@ export function SettingsView({
 }
 
 function Group({ label, children }: { label: string; children: ReactNode }) {
+  const id = `settings-${label.toLowerCase()}`
   return (
-    <div className="settings-group">
-      <span className="field-label">{label}</span>
-      <div className="settings-card">{children}</div>
-    </div>
+    <section className="settings-group" aria-labelledby={id}>
+      <h2 className="section-title" id={id}>
+        {label}
+      </h2>
+      <div className="settings-list">{children}</div>
+    </section>
   )
 }
 
-function Row({
-  icon,
-  title,
-  detail,
-  children
-}: {
-  icon: ReactNode
-  title: string
-  detail: string
-  children: ReactNode
-}) {
+function Row({ title, detail, children }: { title: string; detail?: string; children: ReactNode }) {
   return (
     <div className="setting-row">
-      <span className="setting-icon">{icon}</span>
       <p>
         <strong>{title}</strong>
-        <small>{detail}</small>
+        {detail && <small>{detail}</small>}
       </p>
       {children}
     </div>
@@ -206,23 +178,18 @@ function SyncCard({ status, onStatus }: { status: SyncStatus; onStatus: (s: Sync
   return (
     <div className="sync-card">
       <div className="setting-row">
-        <span className="setting-icon">
-          <Cloud size={15} />
-        </span>
         <p>
-          <strong>{status.signedIn ? 'Cloud sync is on' : 'Sync across computers'}</strong>
+          <strong>{status.signedIn ? 'Signed in' : 'Sync between computers'}</strong>
           <small>
-            {status.signedIn
-              ? (status.email ?? 'Connected')
-              : 'Use the same email everywhere. No password.'}
+            {status.signedIn ? (status.email ?? 'Connected') : 'Sign in with the same email on each computer.'}
           </small>
         </p>
-        {status.signedIn && <SyncPill status={status} />}
+        {status.signedIn && <SyncState status={status} />}
       </div>
       {!status.configured && (
         <div className="sync-message">
-          <CircleAlert size={14} />
-          <p>This build needs its cloud project connected before sign-in can be enabled.</p>
+          <CircleAlert size={16} />
+          <p>Sync isn't set up in this build.</p>
         </div>
       )}
       {status.configured && !status.signedIn && status.phase !== 'code-sent' && (
@@ -234,10 +201,11 @@ function SyncCard({ status, onStatus }: { status: SyncStatus; onStatus: (s: Sync
           }}
         >
           <input
+            className="field-input"
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            placeholder="you@example.com"
+            placeholder="Email"
             aria-label="Email"
           />
           <button type="submit" className="primary-button">
@@ -253,13 +221,13 @@ function SyncCard({ status, onStatus }: { status: SyncStatus; onStatus: (s: Sync
       )}
       {status.signedIn && (
         <div className="sync-actions">
-          <span>{status.message ?? 'Your changes are connected.'}</span>
-          <button type="button" className="soft-button" onClick={() => void window.dashboard.syncNow().then(onStatus)}>
-            <RefreshCw size={13} /> Sync now
+          <span>{status.message ?? 'Up to date'}</span>
+          <button type="button" className="soft-button sm" onClick={() => void window.dashboard.syncNow().then(onStatus)}>
+            <RefreshCw size={15} /> Sync now
           </button>
           <button
             type="button"
-            className="ghost-button"
+            className="ghost-button sm"
             onClick={() => void window.dashboard.signOutSync().then(onStatus)}
           >
             Sign out

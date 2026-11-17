@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'motion/react'
-import { LoaderCircle } from 'lucide-react'
 import type {
   ActiveTimer,
   DailyLog,
@@ -43,7 +42,7 @@ import { SettingsView } from './components/SettingsView'
 import { TitleBar } from './components/TitleBar'
 import { Toast, type ToastMessage } from './components/Toast'
 import { TodayView, type Filter, type TaskHandlers } from './components/TodayView'
-import { spring } from './components/primitives'
+import { arrive } from './components/primitives'
 
 const noSync: SyncStatus = {
   configured: false,
@@ -66,6 +65,13 @@ const draftFor = (task: Task): TaskDraft => ({
 })
 
 const darkQuery = () => window.matchMedia('(prefers-color-scheme: dark)')
+
+/** "Added for tomorrow at 6pm": relative days read lowercase mid-sentence. */
+const addedFor = (date: string, time?: string) => {
+  const day = relativeDayLabel(date)
+  const inline = ['Today', 'Tomorrow', 'Yesterday'].includes(day) ? day.toLowerCase() : day
+  return `Added for ${inline}${time ? ` at ${timeLabel(time)}` : ''}`
+}
 
 function isTyping(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
@@ -169,7 +175,7 @@ export default function App() {
     if (state.settings.notifications)
       void window.dashboard.notify({
         title: 'Time is up',
-        body: task ? `${task.title} — check it off or add more time.` : 'Your timer finished.'
+        body: task ? `${task.title}: mark it done or add more time.` : 'Your timer finished.'
       })
     setState((current) => (current ? { ...current, activeTimer: null } : current))
   }, [now, state?.activeTimer, state?.settings.notifications, state?.tasks])
@@ -357,9 +363,7 @@ export default function App() {
     }))
     setComposer(null)
     if (!taskId && draft.dueDate !== todayKey())
-      showToast(
-        `Added for ${relativeDayLabel(draft.dueDate)}${draft.dueTime ? ` at ${timeLabel(draft.dueTime)}` : ''}`
-      )
+      showToast(addedFor(draft.dueDate, draft.dueTime))
   }
 
   const quickAdd = (text: string) => {
@@ -376,7 +380,7 @@ export default function App() {
     update((current) => ({ ...current, tasks: [...current.tasks, task] }))
     if (parsed.dueDate !== todayKey())
       showToast(
-        `Added for ${relativeDayLabel(parsed.dueDate)}${parsed.dueTime ? ` at ${timeLabel(parsed.dueTime)}` : ''}`,
+        addedFor(parsed.dueDate, parsed.dueTime),
         {
           label: 'Edit',
           run: () => setComposer({ date: task.dueDate, taskId: task.id, draft: draftFor(task) })
@@ -518,9 +522,12 @@ export default function App() {
 
   if (!state)
     return (
-      <div className="loading-shell">
-        <LoaderCircle className="spin" size={16} />
-        Getting today ready…
+      <div className="loading-shell" role="status" aria-label="Loading">
+        <span className="loading-line" aria-hidden>
+          <span />
+          <i />
+          <span />
+        </span>
       </div>
     )
 
@@ -557,10 +564,10 @@ export default function App() {
             <motion.div
               key={view}
               className="view-frame"
-              initial={{ opacity: 0, y: 10, filter: 'blur(4px)' }}
-              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, y: -6, filter: 'blur(4px)', transition: { duration: 0.12 } }}
-              transition={spring}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, transition: { duration: 0.1 } }}
+              transition={arrive}
             >
               {view === 'today' && (
                 <TodayView

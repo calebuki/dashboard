@@ -88,7 +88,7 @@ async function writeState(state: DashboardState): Promise<boolean> {
   }
 }
 
-const windowBackground = () => (nativeTheme.shouldUseDarkColors ? '#0f0f0e' : '#f6f5f1')
+const windowBackground = () => (nativeTheme.shouldUseDarkColors ? '#121319' : '#f4f4f0')
 
 async function storedTheme(): Promise<ThemePreference> {
   try {
